@@ -651,9 +651,22 @@
                 {% endif %}
               </td>
               <td>
-                <button class="btn btn-ghost btn-sm btn-icon" data-open-modal="po-detail-{{ po.id }}" title="View PO Details">⋯</button>
+                <div class="table-actions">
+                  <button class="btn btn-ghost btn-sm btn-icon" data-open-modal="po-detail-{{ po.id }}" title="View PO Details">⋯</button>
+                  <a href="{{ url_for('download_po_pdf', po_id=po.id) }}" class="btn btn-secondary btn-sm" title="Download PO PDF">⬇ PO</a>
+                  {% if current_user is defined and current_user.role == 'vendor' %}
+                    {% if po.is_invoice_eligible %}
+                      <button class="btn btn-primary btn-sm clay-button" data-open-modal="submit-po-invoice-modal-{{ po.id }}">Submit Invoice</button>
+                    {% elif po.has_invoice %}
+                      <a href="{{ url_for('download_invoice_pdf', invoice_id=po.invoice_id) }}" class="btn btn-ghost btn-sm" title="Download Submitted Invoice PDF">⬇ Invoice</a>
+                    {% endif %}
+                  {% elif po.has_invoice %}
+                    <a href="{{ url_for('download_invoice_pdf', invoice_id=po.invoice_id) }}" class="btn btn-ghost btn-sm" title="Download Invoice PDF">⬇ Invoice</a>
+                  {% endif %}
+                </div>
               </td>
             </tr>
+
             {% endfor %}
           {% else %}
             <tr>
@@ -855,19 +868,113 @@
           <div><div class="form-label">Awarded Vendor</div><div>{{ po.vendor_name|default('—') }}</div></div>
         </div>
         <div class="form-row mb-2">
-          <div><div class="form-label">Source RFQ</div><div>{{ po.rfq_number|default('—') }}</div></div>
+          <div><div class="form-label">Source RFQ</div><div>{{ po.rfq_number|default('—') }} {% if po.rfq_title is defined and po.rfq_title %}— {{ po.rfq_title }}{% endif %}</div></div>
           <div><div class="form-label">Authorized Value</div><div style="font-size: 1.25rem; font-weight: 700; color: var(--color-primary);">{{ po.total|default('—') }}</div></div>
         </div>
         <div class="form-row mb-2">
           <div><div class="form-label">Issue Date</div><div>{{ po.date|default('—') }}</div></div>
           <div><div class="form-label">Order Status</div><div>{{ po.status|default('—')|title }}</div></div>
         </div>
+        {% if po.item_name is defined and po.item_name %}
+        <div class="form-row mb-2">
+          <div><div class="form-label">Procurement Deliverable</div><div><strong>{{ po.item_name }}</strong></div></div>
+          <div><div class="form-label">Quantity &amp; Unit Rate</div><div>{{ po.quantity }} {{ po.rfq_unit|default('Units') }} @ {{ po.unit_price|default('—') }}</div></div>
+        </div>
+        {% endif %}
+        {% if po.has_invoice is defined and po.has_invoice %}
+        <div class="form-row mb-2" style="background: var(--color-teal-soft); padding: 8px 12px; border-radius: 8px;">
+          <div><div class="form-label">Linked Supplier Invoice</div><div><strong>{{ po.invoice_number }}</strong></div></div>
+          <div><div class="form-label">Invoice Verification Status</div><div><span class="badge badge-info">{{ po.invoice_status|default('submitted')|title }}</span></div></div>
+        </div>
+        {% endif %}
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" data-close-modal="po-detail-{{ po.id }}">Close</button>
+        <a href="{{ url_for('download_po_pdf', po_id=po.id) }}" class="btn btn-secondary">⬇ Download PO PDF</a>
+        {% if current_user is defined and current_user.role == 'vendor' %}
+          {% if po.is_invoice_eligible %}
+            <button class="btn btn-primary clay-button" data-close-modal="po-detail-{{ po.id }}" data-open-modal="submit-po-invoice-modal-{{ po.id }}">
+              ＋ Submit Invoice for this PO
+            </button>
+          {% elif po.has_invoice %}
+            <a href="{{ url_for('download_invoice_pdf', invoice_id=po.invoice_id) }}" class="btn btn-primary clay-button">
+              ⬇ Download Invoice PDF
+            </a>
+          {% endif %}
+        {% elif po.has_invoice %}
+          <a href="{{ url_for('download_invoice_pdf', invoice_id=po.invoice_id) }}" class="btn btn-primary clay-button">
+            ⬇ View Invoice PDF
+          </a>
+        {% endif %}
       </div>
     </div>
   </div>
+
+  {# Vendor Submit Invoice Modal for this PO #}
+  {% if current_user is defined and current_user.role == 'vendor' and po.is_invoice_eligible %}
+  <div class="modal-overlay" id="submit-po-invoice-modal-{{ po.id }}">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3>Submit Commercial Invoice for {{ po.number }}</h3>
+        <button class="modal-close" data-close-modal="submit-po-invoice-modal-{{ po.id }}" aria-label="Close modal">&times;</button>
+      </div>
+      <form method="POST" action="{{ url_for('register_invoice') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+        <input type="hidden" name="po_id" value="{{ po.id }}">
+        <input type="hidden" name="po_number" value="{{ po.number }}">
+        <input type="hidden" name="return_endpoint" value="procurement">
+
+        <div class="modal-body">
+          <div class="form-row mb-2" style="background: var(--bg-main); padding: 10px 14px; border-radius: 8px;">
+            <div>
+              <div class="form-label">Purchase Order Reference</div>
+              <div><strong>{{ po.number }}</strong> ({{ po.rfq_number|default('') }})</div>
+            </div>
+            <div>
+              <div class="form-label">Authorized Value</div>
+              <div style="font-size: 1.15rem; font-weight: 700; color: var(--color-primary);">{{ po.total }}</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="inv-num-{{ po.id }}" class="form-label">Vendor Invoice Number <span class="required">*</span></label>
+              <input type="text" id="inv-num-{{ po.id }}" name="invoice_number" class="form-input" required
+                     placeholder="e.g., INV-{{ po.number.replace('PO-', '') }}">
+            </div>
+            <div class="form-group">
+              <label for="inv-date-{{ po.id }}" class="form-label">Invoice Date <span class="required">*</span></label>
+              <input type="date" id="inv-date-{{ po.id }}" name="invoice_date" class="form-input" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="inv-amt-{{ po.id }}" class="form-label">Invoice Total Amount (₹) <span class="required">*</span></label>
+              <input type="number" id="inv-amt-{{ po.id }}" name="amount" class="form-input" required
+                     step="0.01" min="0" value="{{ (po.total_amount_paise / 100)|round(2) }}">
+              <div class="form-hint">Pre-filled with authorized PO amount. Three-way check is performed upon submission.</div>
+            </div>
+            <div class="form-group">
+              <label for="inv-due-{{ po.id }}" class="form-label">Payment Due Date</label>
+              <input type="date" id="inv-due-{{ po.id }}" name="due_date" class="form-input">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="inv-notes-{{ po.id }}" class="form-label">Delivery Particulars, GST &amp; Notes</label>
+            <textarea id="inv-notes-{{ po.id }}" name="notes" class="form-textarea"
+                      placeholder="Delivery challan reference, tax invoice breakdown, or special instructions…"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close-modal="submit-po-invoice-modal-{{ po.id }}">Cancel</button>
+          <button type="submit" class="btn btn-primary clay-button">Submit Invoice to Accounts Payable</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
   {% endfor %}
 {% endif %}
 

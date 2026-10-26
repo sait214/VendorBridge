@@ -6,8 +6,9 @@ Integrated with SQLite database layer (database.py).
 import os
 import re
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, abort, Response
 import database as db
+import pdf_generator
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('VENDORBRIDGE_SECRET_KEY', 'vendorbridge-enterprise-hackathon-2026-key')
@@ -584,28 +585,48 @@ def finance():
 @app.route('/finance/invoice/register', methods=['POST'])
 def register_invoice():
     user = get_current_user()
+    if not user:
+        return redirect(url_for('login'))
+
     inv_num = request.form.get('invoice_number', '').strip()
     po_num = request.form.get('po_number', '').strip()
+    po_id = request.form.get('po_id', '').strip()
     amount_str = request.form.get('amount', '').strip()
+    inv_date = request.form.get('invoice_date', '').strip()
+    due_date = request.form.get('due_date', '').strip()
+    notes = request.form.get('notes', '').strip()
+    redirect_endpoint = request.form.get('return_endpoint', 'finance')
 
-    if not inv_num or not po_num:
+    if not inv_num or (not po_num and not po_id):
         flash('Invoice number and valid PO reference are required.', 'error')
+        if redirect_endpoint == 'procurement':
+            return redirect(url_for('procurement', tab='orders'))
         return redirect(url_for('finance', tab='invoices'))
 
     try:
+        vendor_id = user.get('vendor_id') if user.get('role') == 'vendor' else None
         inv_id, has_mismatch, mismatch_reason = db.register_invoice_in_db(
             invoice_number=inv_num,
-            po_number=po_num,
+            po_number=po_num or None,
+            po_id=po_id or None,
             amount_str=amount_str,
-            user_id=user['id'] if user else None,
+            user_id=user['id'],
+            vendor_id=vendor_id,
+            invoice_date=inv_date or None,
+            due_date=due_date or None,
+            notes=notes or None,
         )
         if has_mismatch:
-            flash(f"Invoice {inv_num} registered with warning: PO mismatch detected! Awaiting review.", 'warning')
+            flash(f"Invoice {inv_num} submitted with notice: {mismatch_reason}", 'warning')
         else:
-            flash(f"Invoice {inv_num} registered successfully and matched against {po_num}.", 'success')
+            flash(f"Invoice {inv_num} submitted successfully and linked to Purchase Order.", 'success')
+    except (ValueError, PermissionError) as e:
+        flash(str(e), 'error')
     except Exception as e:
-        flash(f"Failed to register invoice: {str(e)}", 'error')
+        flash(f"Failed to submit invoice: {str(e)}", 'error')
 
+    if redirect_endpoint == 'procurement':
+        return redirect(url_for('procurement', tab='orders'))
     return redirect(url_for('finance', tab='invoices'))
 
 
@@ -623,11 +644,14 @@ def verify_invoice():
         flash('Invoice record not found.', 'error')
         return redirect(url_for('finance', tab='invoices'))
 
-    db.verify_invoice_in_db(int(inv_id), admin_user_id=user['id'], action=action)
-    if action == 'verify':
-        flash("Invoice verified successfully against Purchase Order.", 'success')
-    else:
-        flash("Invoice rejected. Discrepancy noted.", 'warning')
+    try:
+        db.verify_invoice_in_db(int(inv_id), admin_user_id=user['id'], action=action)
+        if action == 'verify':
+            flash("Invoice verified successfully against Purchase Order.", 'success')
+        else:
+            flash("Invoice rejected. Discrepancy recorded in audit trail.", 'warning')
+    except Exception as e:
+        flash(f"Failed to update invoice status: {str(e)}", 'error')
 
     return redirect(url_for('finance', tab='invoices'))
 
@@ -641,14 +665,140 @@ def update_payment():
 
     inv_id = request.form.get('invoice_id')
     status = request.form.get('status', 'paid')
+    payment_ref = request.form.get('payment_reference', '').strip()
 
     if not inv_id:
         flash('Invoice record not found.', 'error')
         return redirect(url_for('finance', tab='payments'))
 
-    db.record_payment_in_db(int(inv_id), admin_user_id=user['id'], status=status)
-    flash(f"Payment record updated to {status.title()}.", 'success')
+    try:
+        db.record_payment_in_db(
+            int(inv_id),
+            admin_user_id=user['id'],
+            status=status,
+            reference=payment_ref or None,
+        )
+        flash(f"Payment record updated to {status.title()} successfully.", 'success')
+    except Exception as e:
+        flash(f"Failed to record payment: {str(e)}", 'error')
+
     return redirect(url_for('finance', tab='payments'))
+
+
+# ── PDF Download Routes & Authorization ──
+
+@app.route('/procurement/order/<int:po_id>/pdf')
+def download_po_pdf(po_id):
+    """
+    Downloads an official Purchase Order PDF.
+    Enforces authorization: Admins can download any PO; Vendors only their own.
+    """
+    user = get_current_user()
+    if not user:
+        flash('Please sign in to access purchase order documents.', 'warning')
+        return redirect(url_for('login'))
+
+    po = db.get_po_for_pdf(po_id)
+    if not po:
+        abort(404, description="Purchase Order not found.")
+
+    # Server-side vendor isolation check
+    if user.get('role') == 'vendor':
+        if po.get('vendor_id') != user.get('vendor_id'):
+            abort(403, description="Unauthorized: You do not have permission to view this Purchase Order.")
+
+    try:
+        pdf_bytes = pdf_generator.generate_po_pdf(po)
+        filename = f"VendorBridge-PO-{po['po_number']}.pdf"
+        return Response(
+            pdf_bytes,
+            mimetype='application/pdf',
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+            },
+        )
+    except Exception as e:
+        flash(f"Failed to generate Purchase Order PDF: {str(e)}", 'error')
+        return redirect(url_for('procurement', tab='orders'))
+
+
+@app.route('/finance/invoice/<int:invoice_id>/pdf')
+def download_invoice_pdf(invoice_id):
+    """
+    Downloads a formal Tax Invoice PDF.
+    Enforces authorization: Admins can download any invoice; Vendors only their own.
+    """
+    user = get_current_user()
+    if not user:
+        flash('Please sign in to access invoice documents.', 'warning')
+        return redirect(url_for('login'))
+
+    inv = db.get_invoice_for_pdf(invoice_id)
+    if not inv:
+        abort(404, description="Invoice record not found.")
+
+    # Server-side vendor isolation check
+    if user.get('role') == 'vendor':
+        if inv.get('vendor_id') != user.get('vendor_id'):
+            abort(403, description="Unauthorized: You do not have permission to view this invoice.")
+
+    try:
+        pdf_bytes = pdf_generator.generate_invoice_pdf(inv)
+        filename = f"VendorBridge-Invoice-{inv['invoice_number']}.pdf"
+        return Response(
+            pdf_bytes,
+            mimetype='application/pdf',
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+            },
+        )
+    except Exception as e:
+        flash(f"Failed to generate Invoice PDF: {str(e)}", 'error')
+        return redirect(url_for('finance', tab='invoices'))
+
+
+@app.route('/finance/payment/<int:invoice_id>/receipt/pdf')
+def download_payment_receipt_pdf(invoice_id):
+    """
+    Downloads a Payment Receipt PDF for settled invoices.
+    Enforces authorization and business logic: receipt is only available if payment is recorded.
+    """
+    user = get_current_user()
+    if not user:
+        flash('Please sign in to access payment receipts.', 'warning')
+        return redirect(url_for('login'))
+
+    inv = db.get_payment_receipt_for_pdf(invoice_id)
+    if not inv:
+        abort(404, description="Payment receipt record not found.")
+
+    # Business rule: receipt only available after payment has been recorded
+    if inv.get('status') != 'paid' and not inv.get('paid_at'):
+        flash("Payment receipt unavailable: Payment has not yet been recorded for this invoice.", "warning")
+        return redirect(url_for('finance', tab='payments'))
+
+    # Server-side vendor isolation check
+    if user.get('role') == 'vendor':
+        if inv.get('vendor_id') != user.get('vendor_id'):
+            abort(403, description="Unauthorized: You do not have permission to view this payment receipt.")
+
+    try:
+        pdf_bytes = pdf_generator.generate_payment_receipt_pdf(inv)
+        filename = f"VendorBridge-PaymentReceipt-{inv['invoice_number']}.pdf"
+        return Response(
+            pdf_bytes,
+            mimetype='application/pdf',
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+            },
+        )
+    except Exception as e:
+        flash(f"Failed to generate Payment Receipt PDF: {str(e)}", 'error')
+        return redirect(url_for('finance', tab='payments'))
+
 
 
 if __name__ == '__main__':

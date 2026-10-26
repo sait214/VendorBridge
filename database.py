@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from flask import current_app, g
+from flask import current_app, g, has_app_context
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -35,20 +35,25 @@ def get_db() -> sqlite3.Connection:
     """
     Returns an open SQLite database connection with row_factory and FKs enabled.
     Stores the connection on the Flask application context 'g' when available.
+    Falls back gracefully to a standalone connection outside request context.
     """
-    if "db" not in g:
-        conn = sqlite3.connect(DATABASE_PATH)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON;")
-        g.db = conn
-    return g.db
+    if has_app_context():
+        if "db" not in g:
+            conn = sqlite3.connect(DATABASE_PATH)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON;")
+            g.db = conn
+        return g.db
+    return connect_standalone()
 
 
 def close_db(e: Optional[BaseException] = None) -> None:
     """Closes the current database connection if opened on Flask application context."""
-    db = g.pop("db", None)
-    if db is not None:
-        db.close()
+    if has_app_context():
+        db = g.pop("db", None)
+        if db is not None:
+            db.close()
+
 
 
 def connect_standalone() -> sqlite3.Connection:
@@ -935,6 +940,7 @@ def get_purchase_orders(user: Optional[Dict[str, Any]] = None) -> List[Dict[str,
     """
     Retrieves purchase orders with formatted currency and display fields.
     Enforces vendor isolation: vendors only see their own POs.
+    Includes linked invoice status to determine invoice submission eligibility.
     """
     db = get_db()
     conditions: List[str] = []
@@ -953,7 +959,13 @@ def get_purchase_orders(user: Optional[Dict[str, Any]] = None) -> List[Dict[str,
             po.po_number,
             po.rfq_id,
             r.rfq_number,
+            r.title AS rfq_title,
+            r.item_name,
+            r.quantity AS rfq_quantity,
+            r.unit AS rfq_unit,
+            r.specifications AS rfq_specifications,
             po.quotation_id,
+            q.quotation_number,
             po.vendor_id,
             v.company_name AS vendor_name,
             po.quantity,
@@ -961,10 +973,16 @@ def get_purchase_orders(user: Optional[Dict[str, Any]] = None) -> List[Dict[str,
             po.total_amount_paise,
             po.status,
             SUBSTR(po.created_at, 1, 10) AS date,
-            po.created_at
+            po.created_at,
+            inv.id AS invoice_id,
+            inv.invoice_number,
+            inv.status AS invoice_status,
+            inv.amount_paise AS invoice_amount_paise
         FROM purchase_orders po
         JOIN rfqs r ON po.rfq_id = r.id
         JOIN vendors v ON po.vendor_id = v.id
+        LEFT JOIN quotations q ON po.quotation_id = q.id
+        LEFT JOIN invoices inv ON po.id = inv.po_id AND inv.status != 'rejected'
         {where_clause}
         ORDER BY po.id DESC
     """
@@ -973,13 +991,93 @@ def get_purchase_orders(user: Optional[Dict[str, Any]] = None) -> List[Dict[str,
     for r in rows:
         data = dict(r)
         data["total"] = paise_to_inr_str(data["total_amount_paise"])
+        data["unit_price"] = paise_to_inr_str(data["unit_price_paise"])
+
         # Map internal status for template compatibility
         if data["status"] in ("approved", "issued", "acknowledged"):
             data["display_status"] = "confirmed"
         else:
             data["display_status"] = data["status"]
+
+        # Track invoice lifecycle against this PO
+        data["has_invoice"] = bool(data.get("invoice_id"))
+        data["is_invoice_eligible"] = (not data["has_invoice"]) and (
+            data["status"] in ("approved", "issued", "acknowledged", "confirmed")
+        )
         orders.append(data)
     return orders
+
+
+def get_po_by_id(po_id: int) -> Optional[Dict[str, Any]]:
+    """Retrieves a single Purchase Order record by its primary key ID."""
+    db = get_db()
+    row = db.execute(
+        """SELECT po.*, v.company_name AS vendor_name, v.user_id AS vendor_user_id,
+                  r.rfq_number, r.title AS rfq_title, r.item_name, r.unit, r.specifications
+           FROM purchase_orders po
+           JOIN vendors v ON po.vendor_id = v.id
+           JOIN rfqs r ON po.rfq_id = r.id
+           WHERE po.id = ?""",
+        (po_id,),
+    ).fetchone()
+    if not row:
+        return None
+    data = dict(row)
+    data["total"] = paise_to_inr_str(data["total_amount_paise"])
+    data["unit_price"] = paise_to_inr_str(data["unit_price_paise"])
+    return data
+
+
+def get_po_for_pdf(po_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Retrieves complete joined Purchase Order details formatted for ReportLab PDF generation.
+    """
+    db = get_db()
+    query = """
+        SELECT
+            po.id,
+            po.po_number,
+            po.rfq_id,
+            po.quotation_id,
+            po.vendor_id,
+            po.quantity,
+            po.unit_price_paise,
+            po.total_amount_paise,
+            po.status,
+            po.created_at,
+            po.approved_at,
+            po.issued_at,
+            r.rfq_number,
+            r.title AS rfq_title,
+            r.description AS rfq_description,
+            r.item_name,
+            r.category AS rfq_category,
+            r.unit,
+            r.specifications,
+            q.quotation_number,
+            q.delivery_days,
+            q.terms AS quotation_terms,
+            q.notes AS quotation_notes,
+            v.company_name,
+            v.registration_number,
+            v.contact_phone,
+            v.address,
+            v.category AS vendor_category,
+            u.email AS vendor_email,
+            u.full_name AS vendor_name,
+            u_creat.full_name AS created_by_name,
+            u_appr.full_name AS approved_by_name
+        FROM purchase_orders po
+        JOIN rfqs r ON po.rfq_id = r.id
+        JOIN vendors v ON po.vendor_id = v.id
+        JOIN users u ON v.user_id = u.id
+        LEFT JOIN quotations q ON po.quotation_id = q.id
+        LEFT JOIN users u_creat ON po.created_by = u_creat.id
+        LEFT JOIN users u_appr ON po.approved_by = u_appr.id
+        WHERE po.id = ?
+    """
+    row = db.execute(query, (po_id,),).fetchone()
+    return dict(row) if row else None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1019,17 +1117,26 @@ def get_invoices(
             inv.po_id,
             po.po_number,
             po.total_amount_paise AS po_amount_paise,
+            r.rfq_number,
+            r.title AS rfq_title,
+            r.item_name,
             inv.vendor_id,
             v.company_name AS vendor_name,
             inv.amount_paise,
             inv.invoice_date AS date,
             inv.due_date,
             inv.status,
+            inv.verified_by,
+            inv.verified_at,
+            inv.paid_at,
             inv.payment_reference,
-            inv.created_at
+            inv.created_at,
+            u_ver.full_name AS verified_by_name
         FROM invoices inv
         JOIN purchase_orders po ON inv.po_id = po.id
+        JOIN rfqs r ON po.rfq_id = r.id
         JOIN vendors v ON inv.vendor_id = v.id
+        LEFT JOIN users u_ver ON inv.verified_by = u_ver.id
         {where_clause}
         ORDER BY inv.id DESC
     """
@@ -1083,6 +1190,86 @@ def get_invoices(
     return invoices
 
 
+def get_invoice_by_id(invoice_id: int) -> Optional[Dict[str, Any]]:
+    """Retrieves a single invoice record by primary key ID."""
+    db = get_db()
+    row = db.execute(
+        """SELECT inv.*, po.po_number, v.company_name AS vendor_name, v.user_id AS vendor_user_id
+           FROM invoices inv
+           JOIN purchase_orders po ON inv.po_id = po.id
+           JOIN vendors v ON inv.vendor_id = v.id
+           WHERE inv.id = ?""",
+        (invoice_id,),
+    ).fetchone()
+    if not row:
+        return None
+    data = dict(row)
+    data["amount"] = paise_to_inr_str(data["amount_paise"])
+    return data
+
+
+def get_invoice_for_pdf(invoice_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Retrieves full joined invoice data for ReportLab PDF generation.
+    """
+    db = get_db()
+    query = """
+        SELECT
+            inv.id,
+            inv.invoice_number,
+            inv.amount_paise,
+            inv.invoice_date,
+            inv.due_date,
+            inv.status,
+            inv.verified_by,
+            inv.verified_at,
+            inv.paid_at,
+            inv.payment_reference,
+            inv.created_at,
+            po.id AS po_id,
+            po.po_number,
+            po.total_amount_paise AS po_total_paise,
+            po.unit_price_paise,
+            po.quantity,
+            po.status AS po_status,
+            r.id AS rfq_id,
+            r.rfq_number,
+            r.title AS rfq_title,
+            r.item_name,
+            r.category AS rfq_category,
+            r.unit,
+            r.specifications,
+            q.quotation_number,
+            q.delivery_days,
+            q.terms AS quotation_terms,
+            q.notes AS quotation_notes,
+            v.id AS vendor_id,
+            v.company_name,
+            v.registration_number,
+            v.contact_phone,
+            v.address,
+            v.category AS vendor_category,
+            u.email AS vendor_email,
+            u.full_name AS vendor_name,
+            u_ver.full_name AS verified_by_name
+        FROM invoices inv
+        JOIN purchase_orders po ON inv.po_id = po.id
+        JOIN vendors v ON inv.vendor_id = v.id
+        JOIN users u ON v.user_id = u.id
+        JOIN rfqs r ON po.rfq_id = r.id
+        LEFT JOIN quotations q ON po.quotation_id = q.id
+        LEFT JOIN users u_ver ON inv.verified_by = u_ver.id
+        WHERE inv.id = ?
+    """
+    row = db.execute(query, (invoice_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_payment_receipt_for_pdf(invoice_id: int) -> Optional[Dict[str, Any]]:
+    """Retrieves full joined payment receipt record for ReportLab PDF generation."""
+    return get_invoice_for_pdf(invoice_id)
+
+
 def get_payment_records(user: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Returns payment tracking entries computed from invoices."""
     invoices = get_invoices(user=user)
@@ -1093,6 +1280,7 @@ def get_payment_records(user: Optional[Dict[str, Any]] = None) -> List[Dict[str,
         payments.append({
             "invoice_id": inv["id"],
             "invoice_number": inv["number"],
+            "po_number": inv.get("po_number"),
             "vendor_name": inv["vendor_name"],
             "amount": inv["amount"],
             "amount_paid": inv["amount"] if is_paid else "₹0.00",
@@ -1100,6 +1288,8 @@ def get_payment_records(user: Optional[Dict[str, Any]] = None) -> List[Dict[str,
             "due_date": inv.get("due_date") or (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
             "status": "paid" if is_paid else "unpaid",
             "is_overdue": False,
+            "paid_at": inv.get("paid_at"),
+            "payment_reference": inv.get("payment_reference"),
         })
     return payments
 
@@ -1107,29 +1297,77 @@ def get_payment_records(user: Optional[Dict[str, Any]] = None) -> List[Dict[str,
 def register_invoice_in_db(
     *,
     invoice_number: str,
-    po_number: str,
-    amount_str: str,
+    po_number: Optional[str] = None,
+    po_id: Optional[Union[int, str]] = None,
+    amount_str: Optional[str] = None,
     user_id: Optional[int] = None,
+    vendor_id: Optional[int] = None,
+    invoice_date: Optional[str] = None,
+    due_date: Optional[str] = None,
+    notes: Optional[str] = None,
 ) -> Tuple[int, bool, str]:
     """
     Registers an invoice against an existing PO.
-    Performs validation and mismatch detection.
+    Performs vendor isolation check, duplicate prevention, and mismatch detection.
     Returns (invoice_id, has_mismatch, mismatch_reason).
     """
     db = get_db()
     with db:
-        po_row = db.execute(
-            """SELECT po.id, po.vendor_id, po.total_amount_paise, v.company_name
-               FROM purchase_orders po
-               JOIN vendors v ON po.vendor_id = v.id
-               WHERE po.po_number = ?""",
-            (po_number.strip(),),
-        ).fetchone()
+        po_row = None
+        if po_id:
+            try:
+                po_id_int = int(po_id)
+                po_row = db.execute(
+                    """SELECT po.id, po.po_number, po.vendor_id, po.total_amount_paise, po.status, v.company_name
+                       FROM purchase_orders po
+                       JOIN vendors v ON po.vendor_id = v.id
+                       WHERE po.id = ?""",
+                    (po_id_int,),
+                ).fetchone()
+            except ValueError:
+                pass
+
+        if not po_row and po_number:
+            po_row = db.execute(
+                """SELECT po.id, po.po_number, po.vendor_id, po.total_amount_paise, po.status, v.company_name
+                   FROM purchase_orders po
+                   JOIN vendors v ON po.vendor_id = v.id
+                   WHERE po.po_number = ?""",
+                (str(po_number).strip(),),
+            ).fetchone()
 
         if not po_row:
-            raise ValueError(f"Purchase Order {po_number} not found.")
+            ref_str = po_number or str(po_id)
+            raise ValueError(f"Purchase Order '{ref_str}' could not be found.")
 
-        amount_paise = inr_str_to_paise(amount_str)
+        # 1. Enforce vendor ownership if user is a vendor
+        if vendor_id and po_row["vendor_id"] != vendor_id:
+            raise PermissionError("Unauthorized: You can only submit invoices against Purchase Orders issued to your company.")
+
+        # 2. Prevent duplicate active invoices for the same PO
+        existing_active = db.execute(
+            """SELECT id, invoice_number, status
+               FROM invoices
+               WHERE po_id = ? AND status != 'rejected'""",
+            (po_row["id"],),
+        ).fetchone()
+        if existing_active:
+            raise ValueError(
+                f"Invoice '{existing_active['invoice_number']}' has already been submitted for Purchase Order {po_row['po_number']}."
+            )
+
+        # 3. Check duplicate invoice number for this vendor
+        dup_num = db.execute(
+            """SELECT id FROM invoices WHERE vendor_id = ? AND LOWER(invoice_number) = ?""",
+            (po_row["vendor_id"], invoice_number.strip().lower()),
+        ).fetchone()
+        if dup_num:
+            raise ValueError(
+                f"Invoice number '{invoice_number.strip()}' has already been registered for your company."
+            )
+
+        # 4. Calculate amount and mismatch
+        amount_paise = inr_str_to_paise(amount_str) if amount_str else po_row["total_amount_paise"]
         if amount_paise <= 0:
             amount_paise = po_row["total_amount_paise"]
 
@@ -1143,8 +1381,8 @@ def register_invoice_in_db(
                 f"({paise_to_inr_str(po_amount_paise)}) by ₹{diff:,.2f}."
             )
 
-        inv_date = datetime.now().strftime("%Y-%m-%d")
-        due_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        inv_date = invoice_date.strip() if invoice_date and invoice_date.strip() else datetime.now().strftime("%Y-%m-%d")
+        d_date = due_date.strip() if due_date and due_date.strip() else (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
         cursor = db.execute(
             """INSERT INTO invoices
@@ -1156,17 +1394,17 @@ def register_invoice_in_db(
                 po_row["vendor_id"],
                 amount_paise,
                 inv_date,
-                due_date,
+                d_date,
             ),
         )
         new_inv_id = int(cursor.lastrowid)
 
         log_audit_event(
             actor_user_id=user_id,
-            action="INVOICE_REGISTERED",
+            action="INVOICE_SUBMITTED",
             entity_type="Invoice",
             entity_id=new_inv_id,
-            details=f"Invoice {invoice_number} registered against {po_number}. Mismatch: {has_mismatch}.",
+            details=f"Invoice {invoice_number} submitted against {po_row['po_number']}. Mismatch: {has_mismatch}.",
         )
 
     return new_inv_id, has_mismatch, mismatch_reason
@@ -1204,22 +1442,36 @@ def record_payment_in_db(
     """Records payment for a verified invoice."""
     db = get_db()
     with db:
+        inv = db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+        if not inv:
+            raise ValueError(f"Invoice ID {invoice_id} not found.")
+
+        # Business rule: Must be verified before payment can be recorded
+        if inv["status"] not in ("verified", "paid"):
+            raise ValueError(f"Invoice {inv['invoice_number']} must be verified by admin before payment can be recorded.")
+
+        clean_status = status.strip().lower()
+        if clean_status not in ("paid", "submitted", "verified"):
+            clean_status = "paid"
+
+        payment_ref = reference.strip() if reference and reference.strip() else f"PAY-REF-{datetime.now().strftime('%Y%m%d%H%M')}"
         db.execute(
             """UPDATE invoices
                SET status = ?,
                    paid_at = CURRENT_TIMESTAMP,
                    payment_reference = ?
                WHERE id = ?""",
-            (status.strip().lower(), reference or f"PAY-REF-{datetime.now().strftime('%Y%m%d%H%M')}", invoice_id),
+            (clean_status, payment_ref, invoice_id),
         )
         log_audit_event(
             actor_user_id=admin_user_id,
             action="PAYMENT_RECORDED",
             entity_type="Invoice",
             entity_id=invoice_id,
-            details=f"Payment status for invoice ID {invoice_id} set to {status}.",
+            details=f"Payment recorded for invoice ID {invoice_id} ({inv['invoice_number']}). Ref: {payment_ref}. Status: {clean_status}.",
         )
     return True
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

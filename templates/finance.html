@@ -14,8 +14,13 @@
     <button class="btn btn-primary clay-button" data-open-modal="register-invoice-modal">
       ＋ Register Invoice
     </button>
+    {% elif current_user is defined and current_user.role == 'vendor' %}
+    <button class="btn btn-primary clay-button" data-open-modal="vendor-register-invoice-modal">
+      ＋ Submit New Invoice
+    </button>
     {% endif %}
   </div>
+
 </div>
 
 {# ===== Finance Metrics Overview ===== #}
@@ -143,6 +148,10 @@
               <td>
                 <div class="table-actions">
                   <button class="btn btn-ghost btn-sm btn-icon" data-open-modal="invoice-detail-{{ inv.id }}" title="View Details">⋯</button>
+                  <a href="{{ url_for('download_invoice_pdf', invoice_id=inv.id) }}" class="btn btn-secondary btn-sm" title="Download Invoice PDF">⬇ PDF</a>
+                  {% if inv.payment_status == 'paid' %}
+                    <a href="{{ url_for('download_payment_receipt_pdf', invoice_id=inv.id) }}" class="btn btn-ghost btn-sm" title="Download Payment Receipt">⬇ Receipt</a>
+                  {% endif %}
                   {% if current_user is defined and current_user.role == 'admin' and inv.verification_status == 'pending' %}
                     <form method="POST" action="{{ url_for('verify_invoice') }}" style="display:inline;">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
@@ -156,6 +165,7 @@
                 </div>
               </td>
             </tr>
+
             {% endfor %}
           {% else %}
             <tr>
@@ -216,9 +226,7 @@
             <th>Balance Due</th>
             <th>Due Date</th>
             <th>Status</th>
-            {% if current_user is defined and current_user.role == 'admin' %}
-              <th>Actions</th>
-            {% endif %}
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -236,32 +244,35 @@
               </td>
               <td>{{ pay.due_date|default('—') }}</td>
               <td>
-                {% if pay.status == 'unpaid' %}
-                  <span class="badge badge-unpaid"><span class="badge-dot"></span> Unpaid</span>
+                {% if pay.status == 'paid' %}
+                  <span class="badge badge-paid"><span class="badge-dot"></span> Paid</span>
                 {% elif pay.status == 'partial' %}
                   <span class="badge badge-partial"><span class="badge-dot"></span> Partial</span>
-                {% elif pay.status == 'paid' %}
-                  <span class="badge badge-paid"><span class="badge-dot"></span> Paid</span>
                 {% else %}
                   <span class="badge badge-unpaid"><span class="badge-dot"></span> {{ pay.status|default('Unpaid')|title }}</span>
                 {% endif %}
               </td>
-              {% if current_user is defined and current_user.role == 'admin' %}
               <td>
-                {% if pay.status != 'paid' %}
-                  <button class="btn btn-primary btn-sm clay-button" data-open-modal="update-payment-{{ pay.invoice_id }}" title="Record Payment">
-                    Record Payment
-                  </button>
-                {% else %}
-                  <span class="text-sm text-muted">Settled</span>
-                {% endif %}
+                <div class="table-actions">
+                  {% if pay.status == 'paid' %}
+                    <a href="{{ url_for('download_payment_receipt_pdf', invoice_id=pay.invoice_id) }}" class="btn btn-secondary btn-sm" title="Download Payment Receipt PDF">
+                      ⬇ Receipt PDF
+                    </a>
+                  {% elif current_user is defined and current_user.role == 'admin' %}
+                    <button class="btn btn-primary btn-sm clay-button" data-open-modal="update-payment-{{ pay.invoice_id }}" title="Record Payment">
+                      Record Payment
+                    </button>
+                  {% else %}
+                    <span class="text-sm text-muted">Awaiting Settlement</span>
+                  {% endif %}
+                </div>
               </td>
-              {% endif %}
             </tr>
             {% endfor %}
           {% else %}
             <tr>
-              <td colspan="{{ 8 if current_user is defined and current_user.role == 'admin' else 7 }}">
+              <td colspan="8">
+
                 <div class="empty-state">
                   <div class="empty-state-icon">◎</div>
                   <h4>No payment records found</h4>
@@ -427,6 +438,10 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" data-close-modal="invoice-detail-{{ inv.id }}">Close</button>
+        <a href="{{ url_for('download_invoice_pdf', invoice_id=inv.id) }}" class="btn btn-secondary">⬇ Download Invoice PDF</a>
+        {% if inv.payment_status == 'paid' %}
+          <a href="{{ url_for('download_payment_receipt_pdf', invoice_id=inv.id) }}" class="btn btn-outline">⬇ Download Receipt PDF</a>
+        {% endif %}
         {% if current_user is defined and current_user.role == 'admin' %}
           {% if inv.verification_status == 'pending' %}
             <form method="POST" action="{{ url_for('verify_invoice') }}" style="display:inline;">
@@ -441,6 +456,7 @@
           {% endif %}
         {% endif %}
       </div>
+
     </div>
   </div>
 
@@ -599,4 +615,72 @@
   </div>
 </div>
 {% endif %}
+
+{# Vendor Submit Invoice Modal (from Finance tab) #}
+{% if current_user is defined and current_user.role == 'vendor' %}
+<div class="modal-overlay" id="vendor-register-invoice-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3>Submit Commercial Invoice to Accounts Payable</h3>
+      <button class="modal-close" data-close-modal="vendor-register-invoice-modal" aria-label="Close modal">&times;</button>
+    </div>
+    <form method="POST" action="{{ url_for('register_invoice') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <input type="hidden" name="return_endpoint" value="finance">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="vinv-po" class="form-label">Authorized Purchase Order <span class="required">*</span></label>
+          <select id="vinv-po" name="po_id" class="form-select" required>
+            <option value="">Choose one of your authorized POs…</option>
+            {% if purchase_orders is defined and purchase_orders %}
+              {% for po in purchase_orders %}
+                {% if po.is_invoice_eligible %}
+                  <option value="{{ po.id }}">{{ po.number }} — Authorized Value: {{ po.total }} (Issued: {{ po.date }})</option>
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+          </select>
+          <div class="form-hint">Only approved purchase orders issued to your organization without prior invoices are available.</div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="vinv-number" class="form-label">Supplier Invoice Number <span class="required">*</span></label>
+            <input type="text" id="vinv-number" name="invoice_number" class="form-input" required
+                   placeholder="e.g., INV-2026-001">
+          </div>
+          <div class="form-group">
+            <label for="vinv-date" class="form-label">Invoice Date <span class="required">*</span></label>
+            <input type="date" id="vinv-date" name="invoice_date" class="form-input" required>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="vinv-amount" class="form-label">Invoice Amount (₹) <span class="required">*</span></label>
+            <input type="number" id="vinv-amount" name="amount" class="form-input" required
+                   step="0.01" min="0" placeholder="0.00">
+            <div class="form-hint">Must match or not exceed the authorized PO value for automatic three-way matching.</div>
+          </div>
+          <div class="form-group">
+            <label for="vinv-due-date" class="form-label">Payment Due Date</label>
+            <input type="date" id="vinv-due-date" name="due_date" class="form-input">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="vinv-notes" class="form-label">Delivery Notes &amp; Particulars</label>
+          <textarea id="vinv-notes" name="notes" class="form-textarea"
+                    placeholder="Delivery challan details, tax breakdown, OEM warranty reference…"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close-modal="vendor-register-invoice-modal">Cancel</button>
+        <button type="submit" class="btn btn-primary clay-button">Submit Invoice to Accounts Payable</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 {% endblock %}

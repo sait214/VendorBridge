@@ -456,6 +456,7 @@
             <th>Vendor</th>
             <th>Value</th>
             <th>Status</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -476,17 +477,32 @@
                   <span class="badge badge-draft"><span class="badge-dot"></span> {{ po.status|default('Draft')|title }}</span>
                 {% endif %}
               </td>
+              <td>
+                <div class="table-actions">
+                  <a href="{{ url_for('download_po_pdf', po_id=po.id) }}" class="btn btn-ghost btn-sm" title="Download PO PDF">⬇ PO</a>
+                  {% if current_user is defined and current_user.role == 'vendor' %}
+                    {% if po.is_invoice_eligible %}
+                      <a href="{{ url_for('procurement') }}?tab=orders" class="btn btn-primary btn-sm clay-button" title="Submit Invoice">Submit Invoice</a>
+                    {% elif po.has_invoice %}
+                      <a href="{{ url_for('download_invoice_pdf', invoice_id=po.invoice_id) }}" class="btn btn-secondary btn-sm" title="Download Invoice PDF">⬇ Invoice</a>
+                    {% endif %}
+                  {% elif po.has_invoice %}
+                    <a href="{{ url_for('download_invoice_pdf', invoice_id=po.invoice_id) }}" class="btn btn-secondary btn-sm" title="Download Invoice PDF">⬇ Invoice</a>
+                  {% endif %}
+                </div>
+              </td>
             </tr>
             {% endfor %}
           {% else %}
             <tr>
-              <td colspan="4">
+              <td colspan="5">
                 <div class="empty-state">
                   <p>No purchase orders generated yet.</p>
                 </div>
               </td>
             </tr>
           {% endif %}
+
         </tbody>
       </table>
     </div>
