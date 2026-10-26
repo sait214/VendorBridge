@@ -1,0 +1,496 @@
+{% extends "base.html" %}
+
+{% block title %}
+  {% if active_page == 'profile' %}My Profile — VendorBridge{% else %}Dashboard — VendorBridge{% endif %}
+{% endblock %}
+
+{% block page_title %}
+  {% if active_page == 'profile' %}My Profile{% else %}Dashboard{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if active_page == 'profile' %}
+{# ================================================================
+   COMPLETE PROFILE VIEW (Section 4)
+   ================================================================ #}
+<div class="page-header animate-in">
+  <div>
+    <h2>User Account &amp; Profile</h2>
+    <p>Manage your organization credentials, contact details, and role permissions.</p>
+  </div>
+  <div class="page-header-actions">
+    <span class="badge {% if current_user.status in ['Active','Approved','Verified'] %}badge-approved{% elif current_user.status == 'Pending' %}badge-pending{% else %}badge-rejected{% endif %}" style="padding: 6px 14px; font-size: 0.82rem;">
+      <span class="badge-dot"></span> {{ current_user.status|default('Active') }} Account
+    </span>
+  </div>
+</div>
+
+<div class="profile-grid">
+  {# Left Column: Overview Card #}
+  <div class="clay-card profile-card animate-in">
+    <div class="profile-card-avatar">
+      {{ current_user.name[:2]|upper if current_user and current_user.name else 'U' }}
+    </div>
+    <h3 class="profile-card-name">{{ current_user.name|default('User Name') }}</h3>
+    <div class="profile-card-role">{{ current_user.role_title|default(current_user.role|title if current_user and current_user.role else 'Staff Member') }}</div>
+
+    <div>
+      {% if current_user and current_user.role == 'admin' %}
+        <span class="badge badge-approved"><span class="badge-dot"></span> Procurement Admin</span>
+      {% elif current_user and current_user.status in ['Active', 'Approved', 'Verified'] %}
+        <span class="badge badge-approved"><span class="badge-dot"></span> Approved Vendor Partner</span>
+      {% elif current_user and current_user.status == 'Pending' %}
+        <span class="badge badge-pending"><span class="badge-dot"></span> Pending Approval</span>
+      {% else %}
+        <span class="badge badge-rejected"><span class="badge-dot"></span> {{ current_user.status|default('Registered') }}</span>
+      {% endif %}
+    </div>
+
+    <div class="profile-meta-list">
+      <div class="profile-meta-item">
+        <span class="profile-meta-label">Company</span>
+        <span class="profile-meta-value">{{ current_user.company|default(current_user.name) }}</span>
+      </div>
+      <div class="profile-meta-item">
+        <span class="profile-meta-label">Email</span>
+        <span class="profile-meta-value">{{ current_user.email|default('—') }}</span>
+      </div>
+      <div class="profile-meta-item">
+        <span class="profile-meta-label">Phone</span>
+        <span class="profile-meta-value">{{ current_user.phone|default('Not provided') }}</span>
+      </div>
+      <div class="profile-meta-item">
+        <span class="profile-meta-label">Joined</span>
+        <span class="profile-meta-value">{{ current_user.joined|default('2026') }}</span>
+      </div>
+      <div class="profile-meta-item">
+        <span class="profile-meta-label">Approval Status</span>
+        <span class="profile-meta-value" style="font-weight: 600; color: {% if current_user.status in ['Active','Approved'] %}var(--color-green){% elif current_user.status == 'Pending' %}var(--color-amber){% else %}var(--color-red){% endif %};">
+          {{ current_user.status|default('Active') }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  {# Right Column: Edit Profile Form & Settings #}
+  <div class="clay-card animate-in" style="animation-delay: 0.08s;">
+    <div class="card-header">
+      <h3>Edit Profile Information</h3>
+      <span class="text-sm text-muted">Updates persist in your active session</span>
+    </div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('update_profile') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="prof-name" class="form-label">Full Contact Name <span class="required">*</span></label>
+            <input type="text" id="prof-name" name="name" class="form-input" required
+                   value="{{ current_user.name if current_user else '' }}">
+          </div>
+          <div class="form-group">
+            <label for="prof-email" class="form-label">Email Address (Read-only)</label>
+            <input type="email" id="prof-email" class="form-input" readonly
+                   value="{{ current_user.email if current_user else '' }}" style="background: var(--bg-main); opacity: 0.85;">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="prof-phone" class="form-label">Contact Phone</label>
+            <input type="tel" id="prof-phone" name="phone" class="form-input"
+                   value="{{ current_user.phone if current_user else '' }}" placeholder="+91 XXXXX XXXXX">
+          </div>
+          <div class="form-group">
+            <label for="prof-dept" class="form-label">Department / Organization</label>
+            <input type="text" id="prof-dept" name="department" class="form-input"
+                   value="{{ current_user.department if current_user else '' }}">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="prof-address" class="form-label">Physical / Registered Office Address</label>
+          <input type="text" id="prof-address" name="address" class="form-input"
+                 value="{{ current_user.address if current_user else '' }}" placeholder="Business address">
+        </div>
+
+        <div class="form-group">
+          <label for="prof-bio" class="form-label">Role Summary &amp; Scope</label>
+          <textarea id="prof-bio" name="bio" class="form-textarea"
+                    placeholder="Brief description of your procurement responsibilities or supplier scope…">{{ current_user.bio if current_user else '' }}</textarea>
+        </div>
+
+        <div class="card-footer" style="padding-left: 0; padding-right: 0; border-bottom: none; margin-top: 10px;">
+          <div class="text-sm text-muted">
+            Logged in as <strong>{{ current_user.role_title|default(current_user.role|title if current_user else 'User') }}</strong>
+          </div>
+          <button type="submit" class="btn btn-primary clay-button">
+            Save Profile Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% else %}
+{# ================================================================
+   OPERATIONAL DASHBOARD (Section 10)
+   ================================================================ #}
+<div class="page-header animate-in">
+  <div>
+    <h2>Welcome back{% if current_user is defined and current_user.name %}, {{ current_user.name }}{% endif %}</h2>
+    <p>
+      {% if current_user is defined and current_user.role == 'vendor' %}
+        Vendor Partner Workspace — Monitor RFQ invitations, quotation bids, and purchase orders.
+      {% else %}
+        Operational overview of active procurement lifecycles, vendor evaluations, and pending approvals.
+      {% endif %}
+    </p>
+  </div>
+  <div class="page-header-actions">
+    {% if current_user is defined and current_user.role == 'admin' %}
+    <a href="{{ url_for('procurement') }}?tab=rfqs" class="btn btn-primary clay-button">
+      ＋ New RFQ
+    </a>
+    {% elif current_user is defined and current_user.role == 'vendor' and current_user.status in ['Active', 'Approved'] %}
+    <a href="{{ url_for('procurement') }}?tab=rfqs" class="btn btn-primary clay-button">
+      View Open Tenders
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+{# ===== Pending Review Banner for Self-Registered Vendors (Requirement D & E) ===== #}
+{% if current_user is defined and current_user.role == 'vendor' and current_user.status == 'Pending' %}
+<div class="clay-panel mb-3 p-3 animate-in" style="background: var(--color-amber-bg); border-left: 5px solid var(--color-amber); border-radius: var(--radius-sm);">
+  <div class="d-flex align-center gap-2">
+    <span style="font-size: 1.5rem;">⏳</span>
+    <div>
+      <h4 style="margin: 0; color: var(--color-amber); font-size: 1.05rem;">Registration Application Awaiting Review</h4>
+      <p class="text-sm mt-1" style="color: var(--color-text); margin-bottom: 0;">
+        Your vendor account for <strong>{{ current_user.company|default(current_user.name) }}</strong> was submitted and is currently pending review by our procurement administration.
+        Commercial bidding features and tender participation will be activated once your profile has been approved.
+      </p>
+    </div>
+  </div>
+</div>
+{% elif current_user is defined and current_user.role == 'vendor' and current_user.status == 'Rejected' %}
+<div class="clay-panel mb-3 p-3 animate-in" style="background: var(--color-red-bg); border-left: 5px solid var(--color-red); border-radius: var(--radius-sm);">
+  <div class="d-flex align-center gap-2">
+    <span style="font-size: 1.5rem;">⚠</span>
+    <div>
+      <h4 style="margin: 0; color: var(--color-red); font-size: 1.05rem;">Vendor Registration Not Approved</h4>
+      <p class="text-sm mt-1" style="color: var(--color-text); margin-bottom: 0;">
+        Your vendor registration application was rejected by the procurement committee.
+        {% if current_user.rejection_reason %}<br><strong>Recorded Reason:</strong> {{ current_user.rejection_reason }}{% endif %}
+      </p>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ===== Summary Metric Cards with Noticeable Claymorphism ===== #}
+<div class="stats-grid">
+  {% if current_user is defined and current_user.role == 'vendor' %}
+  <div class="stat-card animate-in">
+    <div class="stat-card-icon sage">◑</div>
+    <div class="stat-card-value" style="font-size: 1.2rem;">{{ current_user.status|default('Active') }}</div>
+    <div class="stat-card-label">Account Status</div>
+  </div>
+
+  <div class="stat-card animate-in" style="animation-delay: 0.06s;">
+    <div class="stat-card-icon blue">◫</div>
+    <div class="stat-card-value" data-count="{{ stats.active_rfqs|default(0) }}">{{ stats.active_rfqs|default(0) }}</div>
+    <div class="stat-card-label">Available RFQs</div>
+  </div>
+
+  <div class="stat-card animate-in" style="animation-delay: 0.12s;">
+    <div class="stat-card-icon amber">◈</div>
+    <div class="stat-card-value" data-count="{{ stats.pending_approvals|default(0) }}">{{ stats.pending_approvals|default(0) }}</div>
+    <div class="stat-card-label">Submitted Quotations</div>
+  </div>
+
+  <div class="stat-card animate-in" style="animation-delay: 0.18s;">
+    <div class="stat-card-icon green">▤</div>
+    <div class="stat-card-value" data-count="{{ stats.purchase_orders|default(0) }}">{{ stats.purchase_orders|default(0) }}</div>
+    <div class="stat-card-label">Awarded POs</div>
+  </div>
+
+  <div class="stat-card animate-in" style="animation-delay: 0.24s;">
+    <div class="stat-card-icon red">▧</div>
+    <div class="stat-card-value" data-count="{{ stats.unpaid_invoices|default(0) }}">{{ stats.unpaid_invoices|default(0) }}</div>
+    <div class="stat-card-label">Open Invoices</div>
+  </div>
+
+  {% else %}
+  <div class="stat-card animate-in">
+    <div class="stat-card-icon sage">◑</div>
+    <div class="stat-card-value" data-count="{{ stats.total_vendors|default(0) }}">{{ stats.total_vendors|default(0) }}</div>
+    <div class="stat-card-label">Total Vendors</div>
+  </div>
+
+  <div class="stat-card animate-in" style="animation-delay: 0.06s;">
+    <div class="stat-card-icon blue">◫</div>
+    <div class="stat-card-value" data-count="{{ stats.active_rfqs|default(0) }}">{{ stats.active_rfqs|default(0) }}</div>
+    <div class="stat-card-label">Active RFQs</div>
+  </div>
+
+  <div class="stat-card animate-in" style="animation-delay: 0.12s;">
+    <div class="stat-card-icon amber">◈</div>
+    <div class="stat-card-value" data-count="{{ stats.pending_approvals|default(0) }}">{{ stats.pending_approvals|default(0) }}</div>
+    <div class="stat-card-label">Pending Approvals</div>
+  </div>
+
+  <div class="stat-card animate-in" style="animation-delay: 0.18s;">
+    <div class="stat-card-icon green">▤</div>
+    <div class="stat-card-value" data-count="{{ stats.purchase_orders|default(0) }}">{{ stats.purchase_orders|default(0) }}</div>
+    <div class="stat-card-label">Purchase Orders</div>
+  </div>
+
+  <div class="stat-card animate-in" style="animation-delay: 0.24s;">
+    <div class="stat-card-icon red">▧</div>
+    <div class="stat-card-value" data-count="{{ stats.unpaid_invoices|default(0) }}">{{ stats.unpaid_invoices|default(0) }}</div>
+    <div class="stat-card-label">Unpaid Invoices</div>
+  </div>
+  {% endif %}
+</div>
+
+{# ===== Quick Actions Tile Grid (Admin Only) ===== #}
+{% if current_user is defined and current_user.role == 'admin' %}
+<div class="card mb-3 animate-in" style="animation-delay: 0.1s;">
+  <div class="card-header">
+    <h3>Quick Actions</h3>
+  </div>
+  <div class="card-body">
+    <div class="quick-actions">
+      <a href="{{ url_for('procurement') }}?tab=rfqs" class="quick-action-tile">
+        <div class="quick-action-icon" style="background: var(--color-teal-soft); color: var(--color-primary);">◫</div>
+        <span>Create RFQ</span>
+      </a>
+      <a href="{{ url_for('vendors') }}" class="quick-action-tile">
+        <div class="quick-action-icon" style="background: var(--color-terracotta-soft); color: var(--color-terracotta);">◑</div>
+        <span>Manage Vendors</span>
+      </a>
+      <a href="{{ url_for('procurement') }}?tab=comparison" class="quick-action-tile">
+        <div class="quick-action-icon" style="background: var(--color-green-bg); color: var(--color-green);">⚖</div>
+        <span>Compare Quotations</span>
+      </a>
+      <a href="{{ url_for('procurement') }}?tab=approvals" class="quick-action-tile">
+        <div class="quick-action-icon" style="background: var(--color-red-bg); color: var(--color-red);">◈</div>
+        <span>Pending Approvals</span>
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ===== Split Section: Recent Activity & Pending Tasks ===== #}
+<div class="grid-2 mb-3">
+
+  {# ----- Recent Activity Feed ----- #}
+  <div class="card animate-in" style="animation-delay: 0.15s;">
+    <div class="card-header">
+      <h3>Recent Procurement Activity</h3>
+      {% if current_user is defined and current_user.role == 'admin' %}
+        <a href="{{ url_for('finance') }}?tab=audit" class="btn btn-ghost btn-sm">Audit Log</a>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      {% if recent_activity is defined and recent_activity %}
+        <div class="activity-list">
+          {% for item in recent_activity %}
+          <div class="activity-item">
+            <span class="activity-dot {{ item.color|default('blue') }}"></span>
+            <div class="activity-content">
+              <div class="activity-text">
+                <strong>{{ item.user|default('System') }}</strong> {{ item.action|default('performed an action') }}
+                {% if item.record %} on <strong>{{ item.record }}</strong>{% endif %}
+              </div>
+              <div class="activity-time">{{ item.time|default('Just now') }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state-icon">◌</div>
+          <h4>No recent activity</h4>
+          <p>Activity will appear here as procurement operations take place.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ----- Pending Tasks Card ----- #}
+  <div class="card animate-in" style="animation-delay: 0.2s;">
+    <div class="card-header">
+      <h3>
+        {% if current_user is defined and current_user.role == 'vendor' %}
+          Supplier Checklist
+        {% else %}
+          Pending Tasks &amp; Actions
+        {% endif %}
+      </h3>
+      {% if current_user is defined and current_user.role == 'admin' %}
+        <span class="badge badge-pending"><span class="badge-dot"></span> {{ pending_tasks|length if pending_tasks is defined else 0 }} Action Required</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      {% if current_user is defined and current_user.role == 'vendor' %}
+        <div class="activity-list">
+          <div class="activity-item">
+            <span class="activity-dot green"></span>
+            <div class="activity-content">
+              <div class="activity-text"><strong>Profile Registered:</strong> {{ current_user.company|default(current_user.name) }}</div>
+              <div class="activity-time">Status: {{ current_user.status }}</div>
+            </div>
+          </div>
+          <div class="activity-item">
+            <span class="activity-dot {{ 'green' if current_user.status in ['Active','Approved'] else 'amber' }}"></span>
+            <div class="activity-content">
+              <div class="activity-text">
+                {% if current_user.status in ['Active','Approved'] %}
+                  <strong>Compliance Approved:</strong> Eligible to participate in open tenders.
+                {% else %}
+                  <strong>Awaiting Admin Review:</strong> Your credentials are being validated.
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      {% elif pending_tasks is defined and pending_tasks %}
+        <div class="activity-list">
+          {% for task in pending_tasks %}
+          <div class="activity-item">
+            <span class="activity-dot {{ task.priority_color|default('amber') }}"></span>
+            <div class="activity-content">
+              <div class="activity-text">{{ task.description|default('Task pending review') }}</div>
+              <div class="activity-time">{{ task.due|default('') }}</div>
+            </div>
+            <div>
+              {% if task.link is defined and task.link %}
+                <a href="{{ task.link }}" class="btn btn-secondary btn-sm">Review</a>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state-icon">✓</div>
+          <h4>All tasks completed</h4>
+          <p>No pending approvals or verification reviews at this time.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ===== Split Section: Recent RFQs & Recent Purchase Orders ===== #}
+<div class="grid-2">
+
+  {# ----- Recent RFQs Table ----- #}
+  <div class="card animate-in" style="animation-delay: 0.25s;">
+    <div class="card-header">
+      <h3>{% if current_user is defined and current_user.role == 'vendor' %}Available RFQs{% else %}Active RFQs{% endif %}</h3>
+      <a href="{{ url_for('procurement') }}?tab=rfqs" class="btn btn-ghost btn-sm">View All</a>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>RFQ #</th>
+            <th>Title</th>
+            <th>Deadline</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if recent_rfqs is defined and recent_rfqs %}
+            {% for rfq in recent_rfqs %}
+            <tr>
+              <td><strong>{{ rfq.number|default('—') }}</strong></td>
+              <td>{{ rfq.title|default('Untitled') }}</td>
+              <td>{{ rfq.deadline|default('—') }}</td>
+              <td>
+                {% if rfq.status == 'open' %}
+                  <span class="badge badge-active"><span class="badge-dot"></span> Open</span>
+                {% elif rfq.status == 'closed' %}
+                  <span class="badge badge-info"><span class="badge-dot"></span> Closed</span>
+                {% elif rfq.status == 'draft' %}
+                  <span class="badge badge-draft"><span class="badge-dot"></span> Draft</span>
+                {% elif rfq.status == 'awarded' %}
+                  <span class="badge badge-approved"><span class="badge-dot"></span> Awarded</span>
+                {% else %}
+                  <span class="badge badge-draft"><span class="badge-dot"></span> {{ rfq.status|default('Draft')|title }}</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="4">
+                <div class="empty-state">
+                  <p>No active RFQs at this time.</p>
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ----- Recent Purchase Orders Table ----- #}
+  <div class="card animate-in" style="animation-delay: 0.3s;">
+    <div class="card-header">
+      <h3>Recent Purchase Orders</h3>
+      <a href="{{ url_for('procurement') }}?tab=orders" class="btn btn-ghost btn-sm">View All</a>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>PO #</th>
+            <th>Vendor</th>
+            <th>Value</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if recent_orders is defined and recent_orders %}
+            {% for po in recent_orders %}
+            <tr>
+              <td><strong>{{ po.number|default('—') }}</strong></td>
+              <td>{{ po.vendor_name|default('—') }}</td>
+              <td><strong>{{ po.total|default('—') }}</strong></td>
+              <td>
+                {% if po.status == 'confirmed' %}
+                  <span class="badge badge-approved"><span class="badge-dot"></span> Confirmed</span>
+                {% elif po.status == 'pending' %}
+                  <span class="badge badge-pending"><span class="badge-dot"></span> Pending</span>
+                {% elif po.status == 'delivered' %}
+                  <span class="badge badge-info"><span class="badge-dot"></span> Delivered</span>
+                {% else %}
+                  <span class="badge badge-draft"><span class="badge-dot"></span> {{ po.status|default('Draft')|title }}</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="4">
+                <div class="empty-state">
+                  <p>No purchase orders generated yet.</p>
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

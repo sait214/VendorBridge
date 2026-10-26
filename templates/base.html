@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="VendorBridge — Procurement Management System">
+  <title>{% block title %}VendorBridge{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <div class="app-layout">
+
+    {# ===== Sidebar ===== #}
+    <aside class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation">
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-icon">⬡</div>
+        <div>
+          <h1>VendorBridge</h1>
+          <span>Procurement</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="sidebar-section-title">Navigation</div>
+
+        <a href="{{ url_for('dashboard') }}"
+           class="sidebar-link {% if active_page == 'dashboard' %}active{% endif %}"
+           aria-current="{% if active_page == 'dashboard' %}page{% endif %}">
+          <span class="nav-icon">▣</span>
+          <span>Dashboard</span>
+        </a>
+
+        {% if current_user is defined and current_user and current_user.role == 'admin' %}
+        <a href="{{ url_for('vendors') }}"
+           class="sidebar-link {% if active_page == 'vendors' %}active{% endif %}"
+           aria-current="{% if active_page == 'vendors' %}page{% endif %}">
+          <span class="nav-icon">◑</span>
+          <span>Vendors</span>
+          {% if pending_vendor_count is defined and pending_vendor_count %}
+            <span class="nav-badge">{{ pending_vendor_count }}</span>
+          {% endif %}
+        </a>
+        {% endif %}
+
+        <div class="sidebar-section-title">Operations</div>
+
+        <a href="{{ url_for('procurement') }}?tab=rfqs"
+           class="sidebar-link {% if active_page == 'procurement' and (active_tab == 'rfqs' or not active_tab) %}active{% endif %}">
+          <span class="nav-icon">◫</span>
+          <span>{% if current_user is defined and current_user and current_user.role == 'vendor' %}Available RFQs{% else %}RFQs &amp; Bids{% endif %}</span>
+          {% if active_rfq_count is defined and active_rfq_count %}
+            <span class="nav-badge">{{ active_rfq_count }}</span>
+          {% endif %}
+        </a>
+
+        <a href="{{ url_for('procurement') }}?tab=orders"
+           class="sidebar-link {% if active_page == 'procurement' and active_tab == 'orders' %}active{% endif %}">
+          <span class="nav-icon">▤</span>
+          <span>Purchase Orders</span>
+        </a>
+
+        {% if current_user is defined and current_user and current_user.role == 'admin' %}
+        <a href="{{ url_for('procurement') }}?tab=approvals"
+           class="sidebar-link {% if active_page == 'procurement' and active_tab == 'approvals' %}active{% endif %}">
+          <span class="nav-icon">◈</span>
+          <span>Approvals</span>
+          {% if pending_approval_count is defined and pending_approval_count %}
+            <span class="nav-badge">{{ pending_approval_count }}</span>
+          {% endif %}
+        </a>
+        {% endif %}
+
+        <div class="sidebar-section-title">Accounting</div>
+
+        <a href="{{ url_for('finance') }}?tab=invoices"
+           class="sidebar-link {% if active_page == 'finance' and (active_tab == 'invoices' or not active_tab) %}active{% endif %}">
+          <span class="nav-icon">▧</span>
+          <span>Invoices</span>
+        </a>
+
+        {% if current_user is defined and current_user and current_user.role == 'admin' %}
+        <a href="{{ url_for('finance') }}?tab=audit"
+           class="sidebar-link {% if active_page == 'finance' and active_tab == 'audit' %}active{% endif %}">
+          <span class="nav-icon">◉</span>
+          <span>Audit Trail</span>
+        </a>
+        {% endif %}
+
+        <div class="sidebar-section-title">Account</div>
+
+        <a href="{{ url_for('profile') }}"
+           class="sidebar-link {% if active_page == 'profile' %}active{% endif %}"
+           aria-current="{% if active_page == 'profile' %}page{% endif %}">
+          <span class="nav-icon">👤</span>
+          <span>My Profile</span>
+        </a>
+      </nav>
+
+      {# Sidebar User Profile & Prominent Logout #}
+      <div class="sidebar-footer">
+        {% if current_user is defined and current_user %}
+        <div class="sidebar-user">
+          <div class="sidebar-avatar">{{ current_user.name[:2]|upper if current_user.name else 'U' }}</div>
+          <div class="sidebar-user-info">
+            <div class="sidebar-user-name" title="{{ current_user.name }}">{{ current_user.name|default('User') }}</div>
+            <div class="sidebar-user-role">{{ current_user.role_title|default(current_user.role|title) }}</div>
+          </div>
+        </div>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('logout') }}" class="sidebar-logout-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <button type="submit" class="sidebar-logout-btn" title="Sign out of your session">
+            <span class="nav-icon">⎋</span>
+            <span>Sign Out</span>
+          </button>
+        </form>
+      </div>
+    </aside>
+
+    {# ===== Sidebar Overlay (Mobile) ===== #}
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    {# ===== Main Content Area ===== #}
+    <div class="main-content">
+
+      {# ----- Top Navigation Bar ----- #}
+      <header class="topbar" role="banner">
+        <button class="topbar-toggle" id="sidebar-toggle" aria-label="Toggle navigation drawer">☰</button>
+
+        <h2 class="topbar-title">{% block page_title %}Dashboard{% endblock %}</h2>
+
+        {# Topbar Search Bar with Explicit Accessible Submit Action (Requirement C) #}
+        <div class="topbar-search">
+          <form method="GET" action="{{ url_for('vendors') if active_page == 'vendors' else (url_for('procurement') if active_page == 'procurement' else url_for('dashboard')) }}" class="topbar-search-form">
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <input type="search" name="q" placeholder="Search records…" aria-label="Search procurement records"
+                   value="{{ request.args.get('q', '') }}">
+            <button type="submit" class="topbar-search-btn" aria-label="Execute search" title="Search">
+              Search
+            </button>
+          </form>
+        </div>
+
+        {# Topbar Actions with clearly labeled System Notifications (Requirement C) #}
+        <div class="topbar-actions">
+          <button class="topbar-btn" data-open-modal="notifications-modal"
+                  aria-label="System Notifications and Alerts" title="System Notifications &amp; Pending Tasks">
+            🔔
+            {% if (pending_vendor_count is defined and pending_vendor_count > 0) or (pending_approval_count is defined and pending_approval_count > 0) %}
+              <span class="badge-dot"></span>
+            {% endif %}
+          </button>
+
+          {% if current_user is defined and current_user %}
+          <a href="{{ url_for('profile') }}" class="topbar-profile" title="View your profile">
+            <div class="topbar-profile-avatar">{{ current_user.name[:2]|upper if current_user.name else 'U' }}</div>
+            <span class="topbar-profile-name">{{ current_user.name|default('User') }}</span>
+          </a>
+          {% endif %}
+        </div>
+      </header>
+
+      {# ----- Flash Messages ----- #}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-container">
+            {% for category, message in messages %}
+              <div class="flash-message {{ category }}" role="alert">
+                <span>{{ message }}</span>
+                <button class="flash-close" aria-label="Dismiss">&times;</button>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      {# ----- Page Content Landmark ----- #}
+      <main class="page-content" role="main">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+
+  </div>
+
+  {# ===== System Notifications Modal (Accessible & Functional) ===== #}
+  <div class="modal-overlay" id="notifications-modal">
+    <div class="modal" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3>System Alerts &amp; Notifications</h3>
+        <button class="modal-close" data-close-modal="notifications-modal" aria-label="Close notifications">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex flex-column gap-2">
+          {% if pending_vendor_count is defined and pending_vendor_count > 0 and current_user is defined and current_user.role == 'admin' %}
+          <a href="{{ url_for('vendors') }}?status=pending" class="clay-panel d-flex justify-between align-center text-decoration-none" style="padding: 12px 16px; border-left: 4px solid var(--color-amber);">
+            <div>
+              <div class="text-bold" style="color: var(--color-text);">Pending Vendor Review</div>
+              <div class="text-sm text-muted">{{ pending_vendor_count }} partner registration(s) await review.</div>
+            </div>
+            <span class="badge badge-pending">Review</span>
+          </a>
+          {% endif %}
+
+          {% if pending_approval_count is defined and pending_approval_count > 0 and current_user is defined and current_user.role == 'admin' %}
+          <a href="{{ url_for('procurement') }}?tab=approvals" class="clay-panel d-flex justify-between align-center text-decoration-none" style="padding: 12px 16px; border-left: 4px solid var(--color-primary);">
+            <div>
+              <div class="text-bold" style="color: var(--color-text);">Procurement Approvals</div>
+              <div class="text-sm text-muted">{{ pending_approval_count }} purchase proposal(s) awaiting approval.</div>
+            </div>
+            <span class="badge badge-approved">Authorize</span>
+          </a>
+          {% endif %}
+
+          <div class="clay-panel d-flex justify-between align-center" style="padding: 12px 16px; border-left: 4px solid var(--color-green);">
+            <div>
+              <div class="text-bold" style="color: var(--color-text);">Audit &amp; Security Active</div>
+              <div class="text-sm text-muted">All procurement state changes are recorded in the audit trail.</div>
+            </div>
+            <span class="badge badge-active">Active</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/animations.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

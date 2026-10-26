@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Sign in or Register as a Vendor Partner on VendorBridge — Procurement Management System">
+  <title>{% if mode == 'register' %}Register as Vendor{% else %}Sign In{% endif %} — VendorBridge</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="login-page">
+
+  <div class="login-container">
+    <div class="login-card clay-card animate-in">
+
+      {# ----- Brand Logo & Title ----- #}
+      <div class="login-brand">
+        <div class="login-brand-icon">⬡</div>
+        <h1>VendorBridge</h1>
+        <p>Procurement Management System</p>
+      </div>
+
+      {# ----- Mode Switch Tabs ----- #}
+      <div class="d-flex mb-3" style="background: var(--bg-main); border-radius: var(--radius-sm); padding: 4px; box-shadow: var(--shadow-inset-sm);">
+        <a href="{{ url_for('login') }}"
+           class="btn btn-sm text-center flex-1 {% if mode != 'register' %}btn-primary clay-button{% else %}btn-ghost{% endif %}"
+           style="border-radius: var(--radius-sm); text-decoration: none; padding: 8px 12px; font-weight: 600;">
+          Sign In
+        </a>
+        <a href="{{ url_for('register') }}"
+           class="btn btn-sm text-center flex-1 {% if mode == 'register' %}btn-primary clay-button{% else %}btn-ghost{% endif %}"
+           style="border-radius: var(--radius-sm); text-decoration: none; padding: 8px 12px; font-weight: 600;">
+          Register as Vendor
+        </a>
+      </div>
+
+      {# ----- Flash Messages ----- #}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="flash-message {{ category }} mb-2" role="alert">
+              <span>{{ message }}</span>
+              <button class="flash-close" aria-label="Dismiss message">&times;</button>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      {% if mode == 'register' %}
+      {# ================================================================
+         VENDOR SELF-REGISTRATION FORM (Requirement D)
+         ================================================================ #}
+      <div class="mb-3">
+        <h3 style="font-size: 1.15rem; color: var(--color-primary); margin-bottom: 4px;">Supplier Partnership Application</h3>
+        <p class="text-sm text-muted">Complete the profile below to register your business for tender bids.</p>
+      </div>
+
+      <form method="POST" action="{{ url_for('register') }}" novalidate>
+        <input type="hidden" name="action" value="register">
+
+        <div class="form-group">
+          <label for="reg-name" class="form-label">
+            Contact Person's Name <span class="required">*</span>
+          </label>
+          <input
+            type="text"
+            id="reg-name"
+            name="name"
+            class="form-input {% if form_errors is defined and form_errors.name %}error{% endif %}"
+            placeholder="e.g. Vikram Mehta"
+            required
+            autocomplete="name"
+            value="{{ form_data.get('name', '') if form_data is defined else '' }}"
+          >
+          {% if form_errors is defined and form_errors.name %}
+            <div class="form-error">{{ form_errors.name }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="reg-company" class="form-label">
+            Business / Company Name <span class="required">*</span>
+          </label>
+          <input
+            type="text"
+            id="reg-company"
+            name="company"
+            class="form-input {% if form_errors is defined and form_errors.company %}error{% endif %}"
+            placeholder="e.g. Apex Office Solutions Pvt Ltd"
+            required
+            autocomplete="organization"
+            value="{{ form_data.get('company', '') if form_data is defined else '' }}"
+          >
+          {% if form_errors is defined and form_errors.company %}
+            <div class="form-error">{{ form_errors.company }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="reg-email" class="form-label">
+            Business Email Address <span class="required">*</span>
+          </label>
+          <input
+            type="email"
+            id="reg-email"
+            name="email"
+            class="form-input {% if form_errors is defined and form_errors.email %}error{% endif %}"
+            placeholder="contact@company.com"
+            required
+            autocomplete="email"
+            value="{{ form_data.get('email', '') if form_data is defined else '' }}"
+          >
+          {% if form_errors is defined and form_errors.email %}
+            <div class="form-error">{{ form_errors.email }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="reg-phone" class="form-label">
+            Contact Number <span class="required">*</span>
+          </label>
+          <input
+            type="tel"
+            id="reg-phone"
+            name="phone"
+            class="form-input {% if form_errors is defined and form_errors.phone %}error{% endif %}"
+            placeholder="+91 98765 43210"
+            required
+            autocomplete="tel"
+            value="{{ form_data.get('phone', '') if form_data is defined else '' }}"
+          >
+          {% if form_errors is defined and form_errors.phone %}
+            <div class="form-error">{{ form_errors.phone }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="reg-password" class="form-label">
+            Create Password <span class="required">*</span>
+          </label>
+          <div class="input-password-wrapper">
+            <input
+              type="password"
+              id="reg-password"
+              name="password"
+              class="form-input {% if form_errors is defined and form_errors.password %}error{% endif %}"
+              placeholder="Minimum 6 characters"
+              required
+              autocomplete="new-password"
+            >
+            <button type="button" class="password-toggle" aria-label="Show password" title="Toggle password visibility">◉</button>
+          </div>
+          {% if form_errors is defined and form_errors.password %}
+            <div class="form-error">{{ form_errors.password }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="reg-confirm-password" class="form-label">
+            Confirm Password <span class="required">*</span>
+          </label>
+          <div class="input-password-wrapper">
+            <input
+              type="password"
+              id="reg-confirm-password"
+              name="confirm_password"
+              class="form-input {% if form_errors is defined and form_errors.confirm_password %}error{% endif %}"
+              placeholder="Re-enter your password"
+              required
+              autocomplete="new-password"
+            >
+            <button type="button" class="password-toggle" aria-label="Show password" title="Toggle password visibility">◉</button>
+          </div>
+          {% if form_errors is defined and form_errors.confirm_password %}
+            <div class="form-error">{{ form_errors.confirm_password }}</div>
+          {% endif %}
+        </div>
+
+        <div class="mb-3 p-2 text-sm" style="background: var(--bg-surface-raised); border-radius: var(--radius-sm); border-left: 3px solid var(--color-primary);">
+          ℹ <strong>Review Process:</strong> All self-registered vendor accounts are created with <em>Pending</em> approval status. Features like RFQ bid submission become accessible after procurement administrator verification.
+        </div>
+
+        <button type="submit" class="btn btn-primary clay-button btn-lg w-full mb-2">
+          Submit Vendor Registration
+        </button>
+
+        <p class="text-center text-sm text-muted">
+          Already registered? <a href="{{ url_for('login') }}" style="color: var(--color-primary); font-weight: 600;">Sign in here →</a>
+        </p>
+      </form>
+
+      {% else %}
+      {# ================================================================
+         STANDARD SIGN IN FORM
+         ================================================================ #}
+      <form method="POST" action="{{ url_for('login') }}" novalidate>
+        <input type="hidden" name="action" value="login">
+
+        <div class="form-group">
+          <label for="email" class="form-label">
+            Email Address <span class="required">*</span>
+          </label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            class="form-input {% if form_errors is defined and form_errors.email %}error{% endif %}"
+            placeholder="name@company.com"
+            required
+            autocomplete="email"
+            value="{{ request.form.get('email', '') if request is defined else '' }}"
+          >
+          {% if form_errors is defined and form_errors.email %}
+            <div class="form-error">{{ form_errors.email }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="password" class="form-label">
+            Password <span class="required">*</span>
+          </label>
+          <div class="input-password-wrapper">
+            <input
+              type="password"
+              id="password"
+              name="password"
+              class="form-input {% if form_errors is defined and form_errors.password %}error{% endif %}"
+              placeholder="Enter your password"
+              required
+              autocomplete="current-password"
+            >
+            <button type="button" class="password-toggle" aria-label="Show password" title="Toggle password visibility">◉</button>
+          </div>
+          {% if form_errors is defined and form_errors.password %}
+            <div class="form-error">{{ form_errors.password }}</div>
+          {% endif %}
+        </div>
+
+        <div class="login-footer-row">
+          <label class="form-checkbox">
+            <input type="checkbox" name="remember" value="1">
+            <span>Remember me</span>
+          </label>
+          <a href="#" class="text-sm" style="color: var(--color-primary);" onclick="alert('Demo Mode: Click any credential chip below to populate credentials.'); return false;">Forgot password?</a>
+        </div>
+
+        <button type="submit" class="btn btn-primary clay-button btn-lg w-full mb-3">
+          Sign In
+        </button>
+
+        {# Clearly visible Register as Vendor link (Requirement D) #}
+        <div class="text-center p-2 mb-3" style="background: var(--color-teal-soft); border-radius: var(--radius-sm);">
+          <span class="text-sm">Interested in becoming a verified supplier?</span><br>
+          <a href="{{ url_for('register') }}" class="text-bold text-sm" style="color: var(--color-primary-dark); text-decoration: underline;">
+            Register as Vendor Partner →
+          </a>
+        </div>
+      </form>
+
+      {# ----- Quick Demo Access Helper ----- #}
+      <div class="demo-credentials-box">
+        <div class="demo-credentials-title">
+          <span>⚡ Demo Accounts (click to auto-fill)</span>
+        </div>
+        <div class="d-flex gap-1 flex-wrap mt-1">
+          <button type="button" class="demo-credential-chip"
+                  data-fill-email="admin@vendorbridge.com"
+                  data-fill-password="admin123"
+                  title="Click to populate Admin credentials">
+            <strong>Admin:</strong> admin@vendorbridge.com / admin123
+          </button>
+          <button type="button" class="demo-credential-chip"
+                  data-fill-email="vendor@apex.in"
+                  data-fill-password="vendor123"
+                  title="Click to populate Vendor credentials">
+            <strong>Vendor:</strong> vendor@apex.in / vendor123
+          </button>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/animations.js') }}"></script>
+</body>
+</html>

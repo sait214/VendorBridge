@@ -1,0 +1,1012 @@
+{% extends "base.html" %}
+
+{% block title %}Procurement — VendorBridge{% endblock %}
+{% block page_title %}Procurement Workspace{% endblock %}
+
+{% block content %}
+<div class="page-header animate-in">
+  <div>
+    <h2>Procurement Lifecycle Workspace</h2>
+    <p>
+      {% if current_user is defined and current_user and current_user.role == 'vendor' %}
+        Review eligible tenders, submit commercial quotations before deadlines, and track purchase orders.
+      {% else %}
+        Manage RFQ tenders, vendor invitations, quotation comparisons, approval decisions, and purchase orders.
+      {% endif %}
+    </p>
+  </div>
+  <div class="page-header-actions">
+    {% if current_user is defined and current_user and current_user.role == 'admin' %}
+    <button class="btn btn-primary clay-button" data-open-modal="create-rfq-modal">
+      ＋ Create RFQ
+    </button>
+    {% elif current_user is defined and current_user and current_user.role == 'vendor' %}
+      {% if current_user.status == 'Approved' or current_user.status == 'Active' %}
+      <button class="btn btn-primary clay-button" data-open-modal="submit-quotation-modal">
+        ＋ Submit Quotation Bid
+      </button>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{# ===== Visual Workflow Stepper ===== #}
+<div class="workflow-steps animate-in">
+  <div class="workflow-step completed">
+    <span class="workflow-step-number">✓</span>
+    <span>Vendor Approval</span>
+  </div>
+  <span class="workflow-step-arrow">→</span>
+  <div class="workflow-step {% if active_tab|default('rfqs') == 'rfqs' %}current{% else %}completed{% endif %}">
+    <span class="workflow-step-number">{% if active_tab|default('rfqs') == 'rfqs' %}2{% else %}✓{% endif %}</span>
+    <span>RFQ Creation</span>
+  </div>
+  <span class="workflow-step-arrow">→</span>
+  <div class="workflow-step {% if active_tab == 'invitations' %}current{% elif active_tab in ['quotations','comparison','approvals','orders'] %}completed{% endif %}">
+    <span class="workflow-step-number">{% if active_tab == 'invitations' %}3{% elif active_tab in ['quotations','comparison','approvals','orders'] %}✓{% else %}3{% endif %}</span>
+    <span>Invitation</span>
+  </div>
+  <span class="workflow-step-arrow">→</span>
+  <div class="workflow-step {% if active_tab == 'quotations' %}current{% elif active_tab in ['comparison','approvals','orders'] %}completed{% endif %}">
+    <span class="workflow-step-number">{% if active_tab == 'quotations' %}4{% elif active_tab in ['comparison','approvals','orders'] %}✓{% else %}4{% endif %}</span>
+    <span>Quotations</span>
+  </div>
+  <span class="workflow-step-arrow">→</span>
+  <div class="workflow-step {% if active_tab == 'comparison' %}current{% elif active_tab in ['approvals','orders'] %}completed{% endif %}">
+    <span class="workflow-step-number">{% if active_tab == 'comparison' %}5{% elif active_tab in ['approvals','orders'] %}✓{% else %}5{% endif %}</span>
+    <span>Compare Quotations</span>
+  </div>
+  <span class="workflow-step-arrow">→</span>
+  <div class="workflow-step {% if active_tab == 'approvals' %}current{% elif active_tab == 'orders' %}completed{% endif %}">
+    <span class="workflow-step-number">{% if active_tab == 'approvals' %}6{% elif active_tab == 'orders' %}✓{% else %}6{% endif %}</span>
+    <span>Approval</span>
+  </div>
+  <span class="workflow-step-arrow">→</span>
+  <div class="workflow-step {% if active_tab == 'orders' %}current{% endif %}">
+    <span class="workflow-step-number">7</span>
+    <span>Purchase Order</span>
+  </div>
+</div>
+
+{# ===== Tab Navigation Bar (Role-Aware) ===== #}
+<div class="tabs" data-tabs="procurement-panels" role="tablist">
+  <button class="tab-link {% if active_tab|default('rfqs') == 'rfqs' %}active{% endif %}"
+          data-tab="rfqs" role="tab" aria-selected="{{ 'true' if active_tab|default('rfqs') == 'rfqs' else 'false' }}">
+    ◫ {% if current_user is defined and current_user and current_user.role == 'vendor' %}Eligible RFQs{% else %}RFQs{% endif %}
+    {% if rfqs is defined %}<span class="tab-count">{{ rfqs|length }}</span>{% endif %}
+  </button>
+
+  {% if current_user is defined and current_user and current_user.role == 'admin' %}
+  <button class="tab-link {% if active_tab == 'invitations' %}active{% endif %}"
+          data-tab="invitations" role="tab" aria-selected="{{ 'true' if active_tab == 'invitations' else 'false' }}">
+    ◇ Invitations
+  </button>
+  {% endif %}
+
+  <button class="tab-link {% if active_tab == 'quotations' %}active{% endif %}"
+          data-tab="quotations" role="tab" aria-selected="{{ 'true' if active_tab == 'quotations' else 'false' }}">
+    ◧ {% if current_user is defined and current_user and current_user.role == 'vendor' %}My Submitted Quotations{% else %}Quotations{% endif %}
+    {% if quotations is defined %}<span class="tab-count">{{ quotations|length }}</span>{% endif %}
+  </button>
+
+  {% if current_user is defined and current_user and current_user.role == 'admin' %}
+  {# Renamed and elevated Compare Quotations Tab (Requirement B) #}
+  <button class="tab-link {% if active_tab == 'comparison' %}active{% endif %}"
+          data-tab="comparison" role="tab" aria-selected="{{ 'true' if active_tab == 'comparison' else 'false' }}">
+    ⚖ Compare Quotations
+  </button>
+
+  <button class="tab-link {% if active_tab == 'approvals' %}active{% endif %}"
+          data-tab="approvals" role="tab" aria-selected="{{ 'true' if active_tab == 'approvals' else 'false' }}">
+    ◈ Approvals
+    {% if pending_approvals is defined and pending_approvals %}<span class="tab-count">{{ pending_approvals|length }}</span>{% endif %}
+  </button>
+  {% endif %}
+
+  <button class="tab-link {% if active_tab == 'orders' %}active{% endif %}"
+          data-tab="orders" role="tab" aria-selected="{{ 'true' if active_tab == 'orders' else 'false' }}">
+    ▤ Purchase Orders
+    {% if purchase_orders is defined and purchase_orders %}<span class="tab-count">{{ purchase_orders|length }}</span>{% endif %}
+  </button>
+
+  <button class="tab-link {% if active_tab == 'history' %}active{% endif %}"
+          data-tab="history" role="tab" aria-selected="{{ 'true' if active_tab == 'history' else 'false' }}">
+    ◉ History
+  </button>
+</div>
+
+<div id="procurement-panels">
+
+{# ================================================================
+   TAB 1: RFQs
+   ================================================================ #}
+<div class="tab-panel {% if active_tab|default('rfqs') == 'rfqs' %}active{% endif %}" id="rfqs" role="tabpanel">
+  <div class="card">
+    <div class="card-header">
+      <h3>
+        {% if current_user is defined and current_user and current_user.role == 'vendor' %}
+          Open Tenders &amp; RFQ Invitations
+        {% else %}
+          Requests for Quotation (RFQs)
+        {% endif %}
+      </h3>
+      <div class="d-flex gap-1">
+        <form method="GET" action="{{ url_for('procurement') }}" class="d-flex gap-1">
+          <input type="hidden" name="tab" value="rfqs">
+          <input type="search" name="q" class="form-input" placeholder="Search RFQs…"
+                 value="{{ request.args.get('q', '') }}" style="width: 180px;">
+          <select name="rfq_status" class="form-select">
+            <option value="">All Statuses</option>
+            <option value="open" {% if request.args.get('rfq_status') == 'open' %}selected{% endif %}>Open</option>
+            <option value="closed" {% if request.args.get('rfq_status') == 'closed' %}selected{% endif %}>Closed</option>
+            <option value="draft" {% if request.args.get('rfq_status') == 'draft' %}selected{% endif %}>Draft</option>
+          </select>
+          <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
+        </form>
+      </div>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>RFQ #</th>
+            <th>Title &amp; Scope</th>
+            <th>Budget</th>
+            <th>Submission Deadline</th>
+            <th>Bids Received</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if rfqs is defined and rfqs %}
+            {% for rfq in rfqs %}
+            <tr>
+              <td><strong>{{ rfq.number|default('—') }}</strong></td>
+              <td>
+                <div class="text-bold">{{ rfq.title|default('Untitled RFQ') }}</div>
+                <div class="text-sm text-muted">{{ rfq.description|default('')|truncate(60) }}</div>
+              </td>
+              <td>{{ rfq.budget|default('—') }}</td>
+              <td>
+                {% if rfq.is_overdue is defined and rfq.is_overdue %}
+                  <span style="color: var(--color-red); font-weight: 700;">{{ rfq.deadline|default('—') }} (Expired)</span>
+                {% else %}
+                  <span>{{ rfq.deadline|default('—') }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="badge badge-info">{{ rfq.bid_count|default(0) }} bid{{ 's' if rfq.bid_count != 1 else '' }}</span>
+              </td>
+              <td>
+                {% if rfq.status == 'open' %}
+                  <span class="badge badge-active"><span class="badge-dot"></span> Open</span>
+                {% elif rfq.status == 'closed' %}
+                  <span class="badge badge-draft"><span class="badge-dot"></span> Closed</span>
+                {% elif rfq.status == 'draft' %}
+                  <span class="badge badge-draft"><span class="badge-dot"></span> Draft</span>
+                {% elif rfq.status == 'awarded' %}
+                  <span class="badge badge-approved"><span class="badge-dot"></span> Awarded</span>
+                {% else %}
+                  <span class="badge badge-draft"><span class="badge-dot"></span> {{ rfq.status|default('Draft')|title }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="table-actions">
+                  <button class="btn btn-ghost btn-sm btn-icon" data-open-modal="rfq-detail-modal-{{ rfq.id }}"
+                          title="View RFQ Specifications">⋯</button>
+
+                  {% if current_user is defined and current_user and current_user.role == 'admin' %}
+                    {# Elevated Compare Quotations Action (Requirement B) #}
+                    {% if rfq.bid_count is defined and rfq.bid_count > 0 %}
+                      <a href="{{ url_for('procurement') }}?tab=comparison&compare_rfq={{ rfq.id }}"
+                         class="btn btn-primary btn-sm clay-button"
+                         title="Review price, delivery time and terms before selecting a supplier">
+                        ⚖ Compare Quotations ({{ rfq.bid_count }})
+                      </a>
+                    {% endif %}
+                    {% if rfq.status == 'open' %}
+                      <a href="{{ url_for('procurement') }}?tab=invitations&rfq_id={{ rfq.id }}" class="btn btn-secondary btn-sm">Invite</a>
+                    {% endif %}
+
+                  {% elif current_user is defined and current_user and current_user.role == 'vendor' %}
+                    {# Vendor bidding workflow (Requirement F & G) #}
+                    {% if current_user.status != 'Approved' and current_user.status != 'Active' %}
+                      <span class="badge badge-pending text-xs" title="Awaiting admin approval">Verification Pending</span>
+                    {% elif rfq.is_overdue or rfq.status != 'open' %}
+                      <span class="badge badge-rejected text-xs">Deadline Passed</span>
+                    {% else %}
+                      <button type="button" class="btn btn-primary btn-sm clay-button"
+                              data-open-modal="submit-quotation-modal"
+                              onclick="var sel = document.getElementById('quot-rfq'); if(sel) sel.value='{{ rfq.id }}';">
+                        ＋ Submit Quotation
+                      </button>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="7">
+                <div class="empty-state">
+                  <div class="empty-state-icon">◫</div>
+                  <h4>No RFQs found</h4>
+                  <p>
+                    {% if current_user is defined and current_user and current_user.role == 'vendor' %}
+                      You have not been invited to any open tenders yet.
+                    {% else %}
+                      Create your first RFQ to initiate procurement requests.
+                    {% endif %}
+                  </p>
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ================================================================
+   TAB 2: Invitations (Admin Only)
+   ================================================================ #}
+{% if current_user is defined and current_user and current_user.role == 'admin' %}
+<div class="tab-panel {% if active_tab == 'invitations' %}active{% endif %}" id="invitations" role="tabpanel">
+  <div class="card">
+    <div class="card-header">
+      <h3>Vendor Invitations</h3>
+      <button class="btn btn-primary btn-sm clay-button" data-open-modal="send-invitation-modal">＋ Send Invitation</button>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>RFQ Reference</th>
+            <th>Invited Vendor Partner</th>
+            <th>Eligibility Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if rfqs is defined and rfqs %}
+            {% for rfq in rfqs %}
+              {% if rfq.invited_vendors %}
+                {% for v_name in rfq.invited_vendors %}
+                <tr>
+                  <td><strong>{{ rfq.number }}</strong> — {{ rfq.title }}</td>
+                  <td><strong>{{ v_name }}</strong></td>
+                  <td><span class="badge badge-approved"><span class="badge-dot"></span> Invited &amp; Eligible</span></td>
+                  <td>
+                    <a href="{{ url_for('procurement') }}?tab=comparison&compare_rfq={{ rfq.id }}" class="btn btn-secondary btn-sm">
+                      Inspect Bids
+                    </a>
+                  </td>
+                </tr>
+                {% endfor %}
+              {% endif %}
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="4">
+                <div class="empty-state">
+                  <div class="empty-state-icon">◇</div>
+                  <h4>No invitations recorded</h4>
+                  <p>Invite approved vendors to participate in open tenders.</p>
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ================================================================
+   TAB 3: Quotations
+   ================================================================ #}
+<div class="tab-panel {% if active_tab == 'quotations' %}active{% endif %}" id="quotations" role="tabpanel">
+  <div class="card">
+    <div class="card-header">
+      <h3>
+        {% if current_user is defined and current_user and current_user.role == 'vendor' %}
+          My Submitted Quotations
+        {% else %}
+          Vendor Quotations &amp; Commercial Offers
+        {% endif %}
+      </h3>
+      {% if current_user is defined and current_user and current_user.role == 'vendor' %}
+        {% if current_user.status == 'Approved' or current_user.status == 'Active' %}
+        <button class="btn btn-primary btn-sm clay-button" data-open-modal="submit-quotation-modal">＋ Submit Quotation Bid</button>
+        {% endif %}
+      {% endif %}
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Quotation #</th>
+            <th>RFQ Reference</th>
+            {% if current_user is defined and current_user.role == 'admin' %}
+              <th>Vendor Partner</th>
+            {% endif %}
+            <th>Total Quoted Price</th>
+            <th>Delivery Schedule</th>
+            <th>Submitted Date</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if quotations is defined and quotations %}
+            {% for q in quotations %}
+            <tr>
+              <td><strong>{{ q.number|default('—') }}</strong></td>
+              <td>{{ q.rfq_number|default('—') }}</td>
+              {% if current_user is defined and current_user.role == 'admin' %}
+                <td><strong>{{ q.vendor_name|default('—') }}</strong></td>
+              {% endif %}
+              <td><strong style="color: var(--color-primary); font-size: 1.05rem;">{{ q.total_price|default('—') }}</strong></td>
+              <td>{{ q.delivery_days|default('—') }} days</td>
+              <td>{{ q.submitted_at|default('—') }}</td>
+              <td>
+                {% if q.status == 'submitted' %}
+                  <span class="badge badge-submitted"><span class="badge-dot"></span> Submitted</span>
+                {% elif q.status == 'under_review' %}
+                  <span class="badge badge-info"><span class="badge-dot"></span> Under Review</span>
+                {% elif q.status == 'selected' %}
+                  <span class="badge badge-approved"><span class="badge-dot"></span> Selected</span>
+                {% elif q.status == 'rejected' %}
+                  <span class="badge badge-rejected"><span class="badge-dot"></span> Rejected</span>
+                {% else %}
+                  <span class="badge badge-draft"><span class="badge-dot"></span> {{ q.status|default('Draft')|title }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="table-actions">
+                  <button class="btn btn-ghost btn-sm btn-icon" data-open-modal="quotation-detail-{{ q.id }}" title="View Quotation Details">⋯</button>
+                  {% if current_user is defined and current_user.role == 'admin' %}
+                    <a href="{{ url_for('procurement') }}?tab=comparison&compare_rfq={{ q.rfq_id|default(q.rfq_number) }}"
+                       class="btn btn-secondary btn-sm" title="Compare this tender's bids">
+                      ⚖ Compare
+                    </a>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="{{ 8 if current_user is defined and current_user.role == 'admin' else 7 }}">
+                <div class="empty-state">
+                  <div class="empty-state-icon">◧</div>
+                  <h4>No quotations found</h4>
+                  <p>
+                    {% if current_user is defined and current_user.role == 'vendor' %}
+                      You have not submitted quotations for any open tenders yet.
+                    {% else %}
+                      Vendor bids will be tabulated here as they arrive.
+                    {% endif %}
+                  </p>
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ================================================================
+   TAB 4: Compare Quotations (Requirement B - Admin Only)
+   ================================================================ #}
+{% if current_user is defined and current_user and current_user.role == 'admin' %}
+<div class="tab-panel {% if active_tab == 'comparison' %}active{% endif %}" id="comparison" role="tabpanel">
+  <div class="card">
+    <div class="card-header d-flex justify-between align-center flex-wrap gap-2">
+      <div>
+        <h3>Side-by-Side Quotation Comparison</h3>
+        <p class="text-sm text-muted">Review price, delivery time and terms before selecting a supplier.</p>
+      </div>
+
+      {# Dropdown selector with clearly visible primary-action treatment #}
+      <form method="GET" action="{{ url_for('procurement') }}" class="d-flex gap-1 align-center flex-wrap">
+        <input type="hidden" name="tab" value="comparison">
+        <select name="compare_rfq" class="form-select" style="min-width: 260px;" aria-label="Select RFQ to compare">
+          <option value="">Select RFQ to compare…</option>
+          {% if rfqs is defined %}
+            {% for rfq in rfqs %}
+              <option value="{{ rfq.id }}" {% if (selected_rfq and selected_rfq.id == rfq.id) or (request.args.get('compare_rfq') == rfq.id|string) %}selected{% endif %}>
+                {{ rfq.number }} — {{ rfq.title }} ({{ rfq.bid_count }} bids)
+              </option>
+            {% endfor %}
+          {% endif %}
+        </select>
+        <button type="submit" class="btn btn-primary clay-button" title="Review price, delivery time and terms before selecting a supplier">
+          ⚖ Compare Quotations
+        </button>
+      </form>
+    </div>
+
+    <div class="card-body">
+      {# Supporting hint (Requirement B) #}
+      <div class="mb-3 p-3" style="background: var(--color-teal-soft); border-radius: var(--radius-sm); border-left: 4px solid var(--color-primary); box-shadow: var(--shadow-clay-soft);">
+        <div class="d-flex align-center gap-2">
+          <span style="font-size: 1.3rem;">💡</span>
+          <div>
+            <div class="text-bold" style="color: var(--color-primary-dark);">Evaluation Guidance</div>
+            <div class="text-sm">
+              Review price, delivery time and terms before selecting a supplier. The lowest price bid is highlighted for reference but <strong>is not selected automatically</strong>. Evaluate vendor quality and delivery reliability.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% if selected_rfq %}
+        {# Clear Selected RFQ Identification (Requirement B) #}
+        <div class="clay-panel mb-3 d-flex justify-between align-center flex-wrap gap-2">
+          <div>
+            <span class="badge badge-info mb-1">{{ selected_rfq.number }}</span>
+            <h3 class="mb-0" style="font-size: 1.25rem; color: var(--color-text);">
+              Comparing Quotations for: {{ selected_rfq.title }}
+            </h3>
+            <div class="text-sm text-muted mt-1">
+              Budget: <strong>{{ selected_rfq.budget }}</strong> &middot;
+              Deadline: <strong>{{ selected_rfq.deadline }}</strong> &middot;
+              Tender Status: <strong>{{ selected_rfq.status|title }}</strong>
+            </div>
+          </div>
+          <div>
+            <span class="badge badge-approved" style="font-size: 0.9rem; padding: 6px 14px;">
+              {{ comparison_data|length if comparison_data is defined else 0 }} available quotation{{ 's' if (comparison_data|length if comparison_data is defined else 0) != 1 else '' }}
+            </span>
+          </div>
+        </div>
+
+        {# Check if sufficient quotations exist (Requirement B) #}
+        {% if comparison_data is defined and comparison_data and comparison_data|length >= 2 %}
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Vendor Partner</th>
+                  <th>Quoted Total Price</th>
+                  <th>Delivery Estimate</th>
+                  <th>Submission Date</th>
+                  <th>Commercial Terms &amp; Scope</th>
+                  <th>Selection Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for bid in comparison_data %}
+                <tr {% if bid.is_lowest is defined and bid.is_lowest %}class="comparison-highlight" style="background: rgba(40, 102, 70, 0.08);"{% endif %}>
+                  <td>
+                    <div class="text-bold">{{ bid.vendor_name|default('—') }}</div>
+                    {% if bid.is_lowest is defined and bid.is_lowest %}
+                      <span class="badge badge-approved" style="margin-top: 4px;">
+                        <span class="badge-dot"></span> Lowest Price Bid
+                      </span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <strong style="font-size: 1.15rem; color: var(--color-primary);">{{ bid.total_price|default('—') }}</strong>
+                  </td>
+                  <td>{{ bid.delivery_days|default('—') }} days</td>
+                  <td>{{ bid.submitted_at|default('—') }}</td>
+                  <td class="text-sm">{{ bid.notes|default('Standard commercial warranty and delivery.') }}</td>
+                  <td>
+                    <form method="POST" action="{{ url_for('select_quotation') }}" style="display:inline;">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+                      <input type="hidden" name="quotation_id" value="{{ bid.quotation_id }}">
+                      <input type="hidden" name="rfq_id" value="{{ selected_rfq.id }}">
+                      <button type="submit" class="btn btn-success btn-sm clay-button">
+                        Select for Approval
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+        {% else %}
+          {# Insufficient quotations explanatory state (Requirement B) #}
+          <div class="clay-panel text-center p-4" style="border: 2px dashed var(--color-border); border-radius: var(--radius); background: var(--bg-surface);">
+            <div style="font-size: 2.2rem; margin-bottom: 8px;">⚖</div>
+            <h4 style="color: var(--color-text);">Insufficient quotations to proceed with comparison</h4>
+            <p class="text-muted text-sm mt-1" style="max-width: 520px; margin: 8px auto;">
+              At least <strong>two competing vendor quotations</strong> are required before side-by-side comparison can proceed.
+              Currently, only <strong>{{ comparison_data|length if comparison_data is defined else 0 }} quotation</strong> is available for {{ selected_rfq.number }}.
+            </p>
+            <p class="text-sm text-muted">Invite additional approved vendors or wait for pending supplier responses.</p>
+            <div class="mt-3">
+              <a href="{{ url_for('procurement') }}?tab=invitations&rfq_id={{ selected_rfq.id }}" class="btn btn-primary btn-sm clay-button">
+                ＋ Invite Additional Vendors to Bid
+              </a>
+            </div>
+          </div>
+        {% endif %}
+
+      {% else %}
+        {# No RFQ selected yet state #}
+        <div class="empty-state">
+          <div class="empty-state-icon">⚖</div>
+          <h4>Select an RFQ Tender Above</h4>
+          <p>Choose an RFQ from the dropdown menu to inspect and compare competing vendor quotations.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ================================================================
+   TAB 5: Approvals (Admin Only)
+   ================================================================ #}
+{% if current_user is defined and current_user and current_user.role == 'admin' %}
+<div class="tab-panel {% if active_tab == 'approvals' %}active{% endif %}" id="approvals" role="tabpanel">
+  <div class="card">
+    <div class="card-header">
+      <h3>Procurement Approval Queue</h3>
+      <span class="text-sm text-muted">Authorizing a bid generates the official Purchase Order</span>
+    </div>
+    <div class="card-body">
+      {% if pending_approvals is defined and pending_approvals %}
+        {% for approval in pending_approvals %}
+        <div class="clay-panel mb-2 d-flex justify-between align-center flex-wrap gap-2">
+          <div>
+            <div class="text-bold" style="font-size: 1.05rem;">{{ approval.rfq_title|default('Untitled Tender') }}</div>
+            <div class="text-sm text-muted mt-1">
+              RFQ Reference: <strong>{{ approval.rfq_number|default('—') }}</strong> &middot;
+              Proposed Vendor: <strong>{{ approval.selected_vendor|default('—') }}</strong> &middot;
+              Bid Total: <strong style="color: var(--color-primary); font-size: 1.05rem;">{{ approval.bid_amount|default('—') }}</strong>
+            </div>
+            <div class="text-sm text-muted mt-1">
+              Delivery Commitment: {{ approval.delivery_days|default('—') }} days &middot;
+              Requested by: {{ approval.requested_by|default('Procurement Officer') }}
+            </div>
+          </div>
+          <div class="d-flex gap-1">
+            <form method="POST" action="{{ url_for('approve_procurement') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+              <input type="hidden" name="approval_id" value="{{ approval.id }}">
+              <input type="hidden" name="action" value="approve">
+              <button type="submit" class="btn btn-success clay-button">
+                ✓ Authorize PO
+              </button>
+            </form>
+            <button class="btn btn-danger" data-open-modal="reject-approval-{{ approval.id }}">
+              ✗ Reject
+            </button>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state-icon">◈</div>
+          <h4>No pending procurement approvals</h4>
+          <p>Tenders will enter this queue once a vendor bid is selected in the Quotation Comparison stage.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ================================================================
+   TAB 6: Purchase Orders
+   ================================================================ #}
+<div class="tab-panel {% if active_tab == 'orders' %}active{% endif %}" id="orders" role="tabpanel">
+  <div class="card">
+    <div class="card-header">
+      <h3>Authorized Purchase Orders</h3>
+      <form method="GET" action="{{ url_for('procurement') }}" class="d-flex gap-1">
+        <input type="hidden" name="tab" value="orders">
+        <select name="po_status" class="form-select">
+          <option value="">All Statuses</option>
+          <option value="confirmed" {% if request.args.get('po_status') == 'confirmed' %}selected{% endif %}>Confirmed</option>
+          <option value="draft" {% if request.args.get('po_status') == 'draft' %}selected{% endif %}>Draft</option>
+          <option value="delivered" {% if request.args.get('po_status') == 'delivered' %}selected{% endif %}>Delivered</option>
+        </select>
+        <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
+      </form>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>PO #</th>
+            <th>RFQ Reference</th>
+            <th>Awarded Vendor</th>
+            <th>Authorized Total</th>
+            <th>Issue Date</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if purchase_orders is defined and purchase_orders %}
+            {% for po in purchase_orders %}
+            <tr>
+              <td><strong>{{ po.number|default('—') }}</strong></td>
+              <td>{{ po.rfq_number|default('—') }}</td>
+              <td>{{ po.vendor_name|default('—') }}</td>
+              <td><strong style="color: var(--color-primary);">{{ po.total|default('—') }}</strong></td>
+              <td>{{ po.date|default('—') }}</td>
+              <td>
+                {% if po.status == 'confirmed' %}
+                  <span class="badge badge-approved"><span class="badge-dot"></span> Confirmed</span>
+                {% elif po.status == 'draft' %}
+                  <span class="badge badge-draft"><span class="badge-dot"></span> Draft</span>
+                {% elif po.status == 'delivered' %}
+                  <span class="badge badge-info"><span class="badge-dot"></span> Delivered</span>
+                {% else %}
+                  <span class="badge badge-pending"><span class="badge-dot"></span> {{ po.status|default('Pending')|title }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <button class="btn btn-ghost btn-sm btn-icon" data-open-modal="po-detail-{{ po.id }}" title="View PO Details">⋯</button>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="7">
+                <div class="empty-state">
+                  <div class="empty-state-icon">▤</div>
+                  <h4>No purchase orders found</h4>
+                  <p>
+                    {% if current_user is defined and current_user.role == 'vendor' %}
+                      No purchase orders have been issued to your organization yet.
+                    {% else %}
+                      Purchase orders are generated automatically once an approval decision is authorized.
+                    {% endif %}
+                  </p>
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ================================================================
+   TAB 7: Procurement History
+   ================================================================ #}
+<div class="tab-panel {% if active_tab == 'history' %}active{% endif %}" id="history" role="tabpanel">
+  <div class="card">
+    <div class="card-header">
+      <h3>Procurement Workflow Event Log</h3>
+    </div>
+    <div class="card-body">
+      {% if procurement_history is defined and procurement_history %}
+        <div class="activity-list">
+          {% for event in procurement_history %}
+          <div class="activity-item">
+            <span class="activity-dot {{ event.color|default('blue') }}"></span>
+            <div class="activity-content">
+              <div class="activity-text">
+                <strong>{{ event.user|default('System') }}</strong> {{ event.action|default('updated record') }}
+                {% if event.record %} on <strong>{{ event.record }}</strong>{% endif %}
+              </div>
+              <div class="activity-time">{{ event.timestamp|default('—') }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state-icon">◉</div>
+          <h4>Workflow audit history</h4>
+          <p>Every milestone from vendor invitation to PO issuance is tracked in the system audit trail.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+</div>{# / procurement-panels #}
+
+{# ================================================================
+   MODALS (OUTSIDE TABLES TO ELIMINATE SCROLL DEFECTS)
+   ================================================================ #}
+
+{# RFQ Detail Modals #}
+{% if rfqs is defined and rfqs %}
+  {% for rfq in rfqs %}
+  <div class="modal-overlay" id="rfq-detail-modal-{{ rfq.id }}">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3>{{ rfq.number|default('RFQ') }} — {{ rfq.title|default('Details') }}</h3>
+        <button class="modal-close" data-close-modal="rfq-detail-modal-{{ rfq.id }}" aria-label="Close modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row mb-2">
+          <div><div class="form-label">Estimated Budget</div><div>{{ rfq.budget|default('—') }}</div></div>
+          <div><div class="form-label">Submission Deadline</div><div>{{ rfq.deadline|default('—') }}</div></div>
+        </div>
+        <div class="form-row mb-2">
+          <div><div class="form-label">Tender Status</div><div>{{ rfq.status|default('Draft')|title }}</div></div>
+          <div><div class="form-label">Date Published</div><div>{{ rfq.created_at|default('—') }}</div></div>
+        </div>
+        <div class="form-label">Description &amp; Technical Requirements</div>
+        <p class="mb-2">{{ rfq.description|default('No specific requirements provided.') }}</p>
+
+        {% set rfq_items = rfq.line_items if rfq.line_items is defined else (rfq['items'] if 'items' in rfq else []) %}
+        {% if rfq_items %}
+        <div class="section-title mt-2">Bill of Materials / Line Items</div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Item Description</th><th>Quantity</th><th>Unit</th><th>Specifications</th></tr></thead>
+            <tbody>
+              {% for item in rfq_items %}
+              <tr>
+                <td>{{ item.name|default('—') }}</td>
+                <td>{{ item.quantity|default('—') }}</td>
+                <td>{{ item.unit|default('—') }}</td>
+                <td>{{ item.spec|default('—') }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close-modal="rfq-detail-modal-{{ rfq.id }}">Close</button>
+        {% if current_user is defined and current_user.role == 'admin' and rfq.bid_count > 0 %}
+          <a href="{{ url_for('procurement') }}?tab=comparison&compare_rfq={{ rfq.id }}" class="btn btn-primary clay-button">
+            ⚖ Compare Quotations ({{ rfq.bid_count }})
+          </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% endif %}
+
+{# Quotation Detail Modals #}
+{% if quotations is defined and quotations %}
+  {% for q in quotations %}
+  <div class="modal-overlay" id="quotation-detail-{{ q.id }}">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3>Quotation Bid {{ q.number|default('') }}</h3>
+        <button class="modal-close" data-close-modal="quotation-detail-{{ q.id }}" aria-label="Close modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row mb-2">
+          <div><div class="form-label">Bidding Vendor Partner</div><div><strong>{{ q.vendor_name|default('—') }}</strong></div></div>
+          <div><div class="form-label">RFQ Reference</div><div>{{ q.rfq_number|default('—') }}</div></div>
+        </div>
+        <div class="form-row mb-2">
+          <div><div class="form-label">Total Commercial Offer</div><div style="font-size: 1.25rem; font-weight: 700; color: var(--color-primary);">{{ q.total_price|default('—') }}</div></div>
+          <div><div class="form-label">Delivery Commitment</div><div>{{ q.delivery_days|default('—') }} days</div></div>
+        </div>
+        {% if q.notes is defined and q.notes %}
+          <div class="form-label">Terms, Specifications &amp; Warranty</div>
+          <p>{{ q.notes }}</p>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close-modal="quotation-detail-{{ q.id }}">Close</button>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% endif %}
+
+{# Reject Approval Modals (Admin Only) #}
+{% if pending_approvals is defined and pending_approvals and current_user is defined and current_user.role == 'admin' %}
+  {% for approval in pending_approvals %}
+  <div class="modal-overlay" id="reject-approval-{{ approval.id }}">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Reject Procurement Bid</h3>
+        <button class="modal-close" data-close-modal="reject-approval-{{ approval.id }}" aria-label="Close modal">&times;</button>
+      </div>
+      <form method="POST" action="{{ url_for('approve_procurement') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+        <input type="hidden" name="approval_id" value="{{ approval.id }}">
+        <input type="hidden" name="action" value="reject">
+        <div class="modal-body">
+          <div class="confirm-message">
+            Reject the selected bid from <strong>{{ approval.selected_vendor }}</strong> for <strong>{{ approval.rfq_title }}</strong>?
+          </div>
+          <div class="form-group">
+            <label for="reject-reason-{{ approval.id }}" class="form-label">
+              Reason for Rejection <span class="required">*</span>
+            </label>
+            <textarea id="reject-reason-{{ approval.id }}" name="rejection_reason"
+                      class="form-textarea" required
+                      placeholder="Specify why this procurement bid is being rejected…"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close-modal="reject-approval-{{ approval.id }}">Cancel</button>
+          <button type="submit" class="btn btn-danger">Reject Proposal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+{% endif %}
+
+{# PO Detail Modals #}
+{% if purchase_orders is defined and purchase_orders %}
+  {% for po in purchase_orders %}
+  <div class="modal-overlay" id="po-detail-{{ po.id }}">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3>Purchase Order {{ po.number|default('') }}</h3>
+        <button class="modal-close" data-close-modal="po-detail-{{ po.id }}" aria-label="Close modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row mb-2">
+          <div><div class="form-label">Purchase Order #</div><div><strong>{{ po.number|default('—') }}</strong></div></div>
+          <div><div class="form-label">Awarded Vendor</div><div>{{ po.vendor_name|default('—') }}</div></div>
+        </div>
+        <div class="form-row mb-2">
+          <div><div class="form-label">Source RFQ</div><div>{{ po.rfq_number|default('—') }}</div></div>
+          <div><div class="form-label">Authorized Value</div><div style="font-size: 1.25rem; font-weight: 700; color: var(--color-primary);">{{ po.total|default('—') }}</div></div>
+        </div>
+        <div class="form-row mb-2">
+          <div><div class="form-label">Issue Date</div><div>{{ po.date|default('—') }}</div></div>
+          <div><div class="form-label">Order Status</div><div>{{ po.status|default('—')|title }}</div></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close-modal="po-detail-{{ po.id }}">Close</button>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% endif %}
+
+{# Create RFQ Modal (Admin Only) #}
+{% if current_user is defined and current_user.role == 'admin' %}
+<div class="modal-overlay" id="create-rfq-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3>Create Request for Quotation (RFQ)</h3>
+      <button class="modal-close" data-close-modal="create-rfq-modal" aria-label="Close modal">&times;</button>
+    </div>
+    <form method="POST" action="{{ url_for('create_rfq') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="rfq-title" class="form-label">Tender Title <span class="required">*</span></label>
+          <input type="text" id="rfq-title" name="title" class="form-input" required
+                 placeholder="e.g., Enterprise Server Rack Infrastructure Q1">
+        </div>
+
+        <div class="form-group">
+          <label for="rfq-description" class="form-label">Description &amp; Specifications <span class="required">*</span></label>
+          <textarea id="rfq-description" name="description" class="form-textarea" required
+                    placeholder="List required items, technical standards, warranty expectations…"></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="rfq-budget" class="form-label">Approved Budget</label>
+            <input type="text" id="rfq-budget" name="budget" class="form-input"
+                   placeholder="e.g., ₹8,50,000">
+          </div>
+          <div class="form-group">
+            <label for="rfq-deadline" class="form-label">Quotation Deadline <span class="required">*</span></label>
+            <input type="date" id="rfq-deadline" name="deadline" class="form-input" required>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close-modal="create-rfq-modal">Cancel</button>
+        <button type="submit" class="btn btn-primary clay-button">Publish RFQ</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Send Invitation Modal (Admin Only) #}
+<div class="modal-overlay" id="send-invitation-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Invite Vendor Partner to Tender</h3>
+      <button class="modal-close" data-close-modal="send-invitation-modal" aria-label="Close modal">&times;</button>
+    </div>
+    <form method="POST" action="{{ url_for('send_invitation') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="inv-rfq" class="form-label">Select Open RFQ <span class="required">*</span></label>
+          <select id="inv-rfq" name="rfq_id" class="form-select" required>
+            <option value="">Choose an RFQ…</option>
+            {% if rfqs is defined %}
+              {% for rfq in rfqs %}
+                {% if rfq.status == 'open' %}
+                  <option value="{{ rfq.id }}">{{ rfq.number }} — {{ rfq.title }}</option>
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="inv-vendor" class="form-label">Approved Vendor Partner <span class="required">*</span></label>
+          <select id="inv-vendor" name="vendor_name" class="form-select" required>
+            <option value="">Select vendor…</option>
+            {% if approved_vendors is defined %}
+              {% for v in approved_vendors %}
+                <option value="{{ v.name }}">{{ v.name }} ({{ v.category|title }})</option>
+              {% endfor %}
+            {% endif %}
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close-modal="send-invitation-modal">Cancel</button>
+        <button type="submit" class="btn btn-primary clay-button">Send Invitation</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{# Submit Quotation Modal (Vendor Role) #}
+{% if current_user is defined and current_user.role == 'vendor' %}
+<div class="modal-overlay" id="submit-quotation-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3>Submit Formal Quotation Bid</h3>
+      <button class="modal-close" data-close-modal="submit-quotation-modal" aria-label="Close modal">&times;</button>
+    </div>
+    <form method="POST" action="{{ url_for('submit_quotation') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="quot-rfq" class="form-label">Select RFQ Tender <span class="required">*</span></label>
+          <select id="quot-rfq" name="rfq_id" class="form-select" required>
+            <option value="">Choose an open RFQ tender…</option>
+            {% if rfqs is defined %}
+              {% for r in rfqs %}
+                {% if r.status == 'open' and not r.is_overdue %}
+                  <option value="{{ r.id }}">{{ r.number }} — {{ r.title }} (Budget: {{ r.budget }} | Deadline: {{ r.deadline }})</option>
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="quot-price" class="form-label">Total Commercial Price (₹) <span class="required">*</span></label>
+            <input type="text" id="quot-price" name="total_price" class="form-input" required
+                   placeholder="e.g., 495000">
+          </div>
+          <div class="form-group">
+            <label for="quot-delivery" class="form-label">Delivery Commitment (days) <span class="required">*</span></label>
+            <input type="number" id="quot-delivery" name="delivery_days" class="form-input" required
+                   min="1" placeholder="e.g., 14">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="quot-notes" class="form-label">Terms, Specifications &amp; Warranty Inclusion</label>
+          <textarea id="quot-notes" name="notes" class="form-textarea"
+                    placeholder="Provide pricing details, payment terms, and OEM warranty coverage…"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close-modal="submit-quotation-modal">Cancel</button>
+        <button type="submit" class="btn btn-primary clay-button">Submit Commercial Bid</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

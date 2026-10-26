@@ -1,0 +1,602 @@
+{% extends "base.html" %}
+
+{% block title %}Finance &amp; Audit — VendorBridge{% endblock %}
+{% block page_title %}Finance &amp; Audit{% endblock %}
+
+{% block content %}
+<div class="page-header animate-in">
+  <div>
+    <h2>Finance &amp; Audit Trail</h2>
+    <p>Invoice matching, payment lifecycles, and chronological procurement audit logs.</p>
+  </div>
+  <div class="page-header-actions">
+    {% if current_user is defined and current_user.role == 'admin' %}
+    <button class="btn btn-primary clay-button" data-open-modal="register-invoice-modal">
+      ＋ Register Invoice
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{# ===== Finance Metrics Overview ===== #}
+{% if current_user is defined and current_user.role == 'admin' %}
+<div class="stats-grid mb-3">
+  <div class="stat-card animate-in">
+    <div class="stat-card-icon blue">▧</div>
+    <div class="stat-card-value" data-count="{{ finance_stats.total_invoices|default(0) }}">{{ finance_stats.total_invoices|default(0) }}</div>
+    <div class="stat-card-label">Total Invoices</div>
+  </div>
+  <div class="stat-card animate-in" style="animation-delay: 0.06s;">
+    <div class="stat-card-icon amber">◈</div>
+    <div class="stat-card-value" data-count="{{ finance_stats.pending_verification|default(0) }}">{{ finance_stats.pending_verification|default(0) }}</div>
+    <div class="stat-card-label">Pending Verification</div>
+  </div>
+  <div class="stat-card animate-in" style="animation-delay: 0.12s;">
+    <div class="stat-card-icon red">◎</div>
+    <div class="stat-card-value" data-count="{{ finance_stats.unpaid|default(0) }}">{{ finance_stats.unpaid|default(0) }}</div>
+    <div class="stat-card-label">Unpaid Invoices</div>
+  </div>
+  <div class="stat-card animate-in" style="animation-delay: 0.18s;">
+    <div class="stat-card-icon green">◉</div>
+    <div class="stat-card-value" data-count="{{ finance_stats.total_paid|default(0) }}">{{ finance_stats.total_paid|default(0) }}</div>
+    <div class="stat-card-label">Paid This Month</div>
+  </div>
+</div>
+{% endif %}
+
+{# ===== Tabs: Invoices, Payment Tracking, Audit Trail ===== #}
+<div class="tabs" data-tabs="finance-panels" role="tablist">
+  <button class="tab-link {% if active_tab|default('invoices') == 'invoices' %}active{% endif %}"
+          data-tab="invoices" role="tab" aria-selected="{{ 'true' if active_tab|default('invoices') == 'invoices' else 'false' }}">
+    ▧ Invoices
+    {% if invoices is defined %}<span class="tab-count">{{ invoices|length }}</span>{% endif %}
+  </button>
+  <button class="tab-link {% if active_tab == 'payments' %}active{% endif %}"
+          data-tab="payments" role="tab" aria-selected="{{ 'true' if active_tab == 'payments' else 'false' }}">
+    ◎ Payment Tracking
+  </button>
+  {% if current_user is defined and current_user.role == 'admin' %}
+  <button class="tab-link {% if active_tab == 'audit' %}active{% endif %}"
+          data-tab="audit" role="tab" aria-selected="{{ 'true' if active_tab == 'audit' else 'false' }}">
+    ◉ Audit Trail
+  </button>
+  {% endif %}
+</div>
+
+<div id="finance-panels">
+
+{# ================================================================
+   TAB 1: Invoices (Clean Table Layout — No Useless Scrollbars)
+   ================================================================ #}
+<div class="tab-panel {% if active_tab|default('invoices') == 'invoices' %}active{% endif %}" id="invoices" role="tabpanel">
+
+  {# Filters #}
+  <div class="filter-bar">
+    <form method="GET" action="{{ url_for('finance') }}" class="d-flex gap-1 flex-wrap align-center w-full">
+      <input type="hidden" name="tab" value="invoices">
+      <input type="search" name="q" class="form-input" placeholder="Search invoice or vendor…"
+             value="{{ request.args.get('q', '') }}" style="min-width: 200px;">
+      <select name="verification_status" class="form-select" aria-label="Verification status">
+        <option value="">All Verifications</option>
+        <option value="pending" {% if request.args.get('verification_status') == 'pending' %}selected{% endif %}>Pending</option>
+        <option value="verified" {% if request.args.get('verification_status') == 'verified' %}selected{% endif %}>Verified</option>
+        <option value="rejected" {% if request.args.get('verification_status') == 'rejected' %}selected{% endif %}>Rejected</option>
+      </select>
+      <select name="payment_status" class="form-select" aria-label="Payment status">
+        <option value="">All Payments</option>
+        <option value="unpaid" {% if request.args.get('payment_status') == 'unpaid' %}selected{% endif %}>Unpaid</option>
+        <option value="partial" {% if request.args.get('payment_status') == 'partial' %}selected{% endif %}>Partially Paid</option>
+        <option value="paid" {% if request.args.get('payment_status') == 'paid' %}selected{% endif %}>Paid</option>
+      </select>
+      <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Invoice #</th>
+            <th>Vendor</th>
+            <th>PO Reference</th>
+            <th>Amount</th>
+            <th>Invoice Date</th>
+            <th>Verification</th>
+            <th>Payment Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if invoices is defined and invoices %}
+            {% for inv in invoices %}
+            <tr>
+              <td><strong>{{ inv.number|default('—') }}</strong></td>
+              <td>{{ inv.vendor_name|default('—') }}</td>
+              <td><span class="text-sm">{{ inv.po_number|default('—') }}</span></td>
+              <td><strong>{{ inv.amount|default('—') }}</strong></td>
+              <td>{{ inv.date|default('—') }}</td>
+              <td>
+                {% if inv.verification_status == 'pending' %}
+                  <span class="badge badge-pending"><span class="badge-dot"></span> Pending</span>
+                {% elif inv.verification_status == 'verified' %}
+                  <span class="badge badge-verified"><span class="badge-dot"></span> Verified</span>
+                {% elif inv.verification_status == 'rejected' %}
+                  <span class="badge badge-rejected"><span class="badge-dot"></span> Rejected</span>
+                {% else %}
+                  <span class="badge badge-draft"><span class="badge-dot"></span> {{ inv.verification_status|default('Pending')|title }}</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if inv.payment_status == 'unpaid' %}
+                  <span class="badge badge-unpaid"><span class="badge-dot"></span> Unpaid</span>
+                {% elif inv.payment_status == 'partial' %}
+                  <span class="badge badge-partial"><span class="badge-dot"></span> Partial</span>
+                {% elif inv.payment_status == 'paid' %}
+                  <span class="badge badge-paid"><span class="badge-dot"></span> Paid</span>
+                {% elif inv.payment_status == 'overdue' %}
+                  <span class="badge badge-overdue"><span class="badge-dot"></span> Overdue</span>
+                {% else %}
+                  <span class="badge badge-unpaid"><span class="badge-dot"></span> {{ inv.payment_status|default('Unpaid')|title }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="table-actions">
+                  <button class="btn btn-ghost btn-sm btn-icon" data-open-modal="invoice-detail-{{ inv.id }}" title="View Details">⋯</button>
+                  {% if current_user is defined and current_user.role == 'admin' and inv.verification_status == 'pending' %}
+                    <form method="POST" action="{{ url_for('verify_invoice') }}" style="display:inline;">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+                      <input type="hidden" name="invoice_id" value="{{ inv.id }}">
+                      <input type="hidden" name="action" value="verify">
+                      <button type="submit" class="btn btn-success btn-sm" title="Verify Invoice"
+                              data-confirm="Verify invoice {{ inv.number }} against Purchase Order?">✓</button>
+                    </form>
+                    <button class="btn btn-danger btn-sm" title="Reject Invoice" data-open-modal="reject-invoice-{{ inv.id }}">✗</button>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="8">
+                <div class="empty-state">
+                  <div class="empty-state-icon">▧</div>
+                  <h4>No invoices registered</h4>
+                  <p>Invoices will appear here once submitted against purchase orders.</p>
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if invoices is defined and invoices %}
+    <div class="card-footer">
+      <span class="text-sm text-muted">
+        Showing {{ invoices|length }} invoice{{ 's' if invoices|length != 1 else '' }}
+      </span>
+      <div class="pagination">
+        <a href="?tab=invoices&page=1" class="pagination-link active">1</a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ================================================================
+   TAB 2: Payment Tracking
+   ================================================================ #}
+<div class="tab-panel {% if active_tab == 'payments' %}active{% endif %}" id="payments" role="tabpanel">
+  <div class="card">
+    <div class="card-header">
+      <h3>Payment Tracking &amp; Schedules</h3>
+      <div class="d-flex gap-1">
+        <form method="GET" action="{{ url_for('finance') }}" class="d-flex gap-1">
+          <input type="hidden" name="tab" value="payments">
+          <select name="pay_filter" class="form-select">
+            <option value="">All Statuses</option>
+            <option value="unpaid" {% if request.args.get('pay_filter') == 'unpaid' %}selected{% endif %}>Unpaid</option>
+            <option value="partial" {% if request.args.get('pay_filter') == 'partial' %}selected{% endif %}>Partially Paid</option>
+            <option value="paid" {% if request.args.get('pay_filter') == 'paid' %}selected{% endif %}>Paid</option>
+          </select>
+          <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
+        </form>
+      </div>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Invoice #</th>
+            <th>Vendor</th>
+            <th>Invoice Total</th>
+            <th>Amount Paid</th>
+            <th>Balance Due</th>
+            <th>Due Date</th>
+            <th>Status</th>
+            {% if current_user is defined and current_user.role == 'admin' %}
+              <th>Actions</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% if payment_records is defined and payment_records %}
+            {% for pay in payment_records %}
+            <tr>
+              <td><strong>{{ pay.invoice_number|default('—') }}</strong></td>
+              <td>{{ pay.vendor_name|default('—') }}</td>
+              <td>{{ pay.amount|default('—') }}</td>
+              <td>{{ pay.amount_paid|default('₹0') }}</td>
+              <td>
+                <span {% if pay.balance is defined and pay.balance != '₹0' and pay.balance != 0 %}style="color: var(--color-red); font-weight: 700;"{% endif %}>
+                  {{ pay.balance|default('—') }}
+                </span>
+              </td>
+              <td>{{ pay.due_date|default('—') }}</td>
+              <td>
+                {% if pay.status == 'unpaid' %}
+                  <span class="badge badge-unpaid"><span class="badge-dot"></span> Unpaid</span>
+                {% elif pay.status == 'partial' %}
+                  <span class="badge badge-partial"><span class="badge-dot"></span> Partial</span>
+                {% elif pay.status == 'paid' %}
+                  <span class="badge badge-paid"><span class="badge-dot"></span> Paid</span>
+                {% else %}
+                  <span class="badge badge-unpaid"><span class="badge-dot"></span> {{ pay.status|default('Unpaid')|title }}</span>
+                {% endif %}
+              </td>
+              {% if current_user is defined and current_user.role == 'admin' %}
+              <td>
+                {% if pay.status != 'paid' %}
+                  <button class="btn btn-primary btn-sm clay-button" data-open-modal="update-payment-{{ pay.invoice_id }}" title="Record Payment">
+                    Record Payment
+                  </button>
+                {% else %}
+                  <span class="text-sm text-muted">Settled</span>
+                {% endif %}
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="{{ 8 if current_user is defined and current_user.role == 'admin' else 7 }}">
+                <div class="empty-state">
+                  <div class="empty-state-icon">◎</div>
+                  <h4>No payment records found</h4>
+                  <p>Payment tracking rows will appear here for verified invoices.</p>
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ================================================================
+   TAB 3: Audit Trail
+   ================================================================ #}
+{% if current_user is defined and current_user.role == 'admin' %}
+<div class="tab-panel {% if active_tab == 'audit' %}active{% endif %}" id="audit" role="tabpanel">
+  <div class="card">
+    <div class="card-header">
+      <h3>Procurement Audit Trail</h3>
+      <div class="d-flex gap-1">
+        <form method="GET" action="{{ url_for('finance') }}" class="d-flex gap-1">
+          <input type="hidden" name="tab" value="audit">
+          <input type="search" name="audit_q" class="form-input" placeholder="Search audit trail…"
+                 value="{{ request.args.get('audit_q', '') }}" style="width: 220px;">
+          <button type="submit" class="btn btn-secondary btn-sm">Search</button>
+        </form>
+      </div>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>User</th>
+            <th>Action</th>
+            <th>Target Record</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if audit_logs is defined and audit_logs %}
+            {% for log in audit_logs %}
+            <tr>
+              <td class="text-sm">{{ log.timestamp|default('—') }}</td>
+              <td>
+                <div class="d-flex align-center gap-1">
+                  <div class="sidebar-avatar" style="width: 26px; height: 26px; font-size: 0.65rem; background: var(--color-teal-soft); color: var(--color-primary);">
+                    {{ log.user_name[:2]|upper if log.user_name is defined and log.user_name else '?' }}
+                  </div>
+                  <span>{{ log.user_name|default('System') }}</span>
+                </div>
+              </td>
+              <td><span class="audit-action">{{ log.action|default('—') }}</span></td>
+              <td><span class="audit-record">{{ log.record_type|default('') }} {{ log.record_id|default('') }}</span></td>
+              <td class="text-sm text-muted">{{ log.details|default('—') }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="5">
+                <div class="empty-state">
+                  <div class="empty-state-icon">◉</div>
+                  <h4>No audit events recorded</h4>
+                  <p>All procurement, approval, and payment events will be logged here.</p>
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+</div>{# / finance-panels #}
+
+{# ================================================================
+   MODAL DIALOGS (CLEANLY LOCATED OUTSIDE TABLES)
+   ================================================================ #}
+{% if invoices is defined and invoices %}
+  {% for inv in invoices %}
+  {# Invoice Detail Modal #}
+  <div class="modal-overlay" id="invoice-detail-{{ inv.id }}">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3>Invoice {{ inv.number|default('') }} — PO Matching</h3>
+        <button class="modal-close" data-close-modal="invoice-detail-{{ inv.id }}" aria-label="Close modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        {% if inv.has_mismatch is defined and inv.has_mismatch %}
+        <div class="mismatch-warning">
+          <span class="mismatch-icon">⚠</span>
+          <div>
+            <strong>Amount Mismatch Detected:</strong>
+            <div>{{ inv.mismatch_reason|default('Invoice amount differs from the approved Purchase Order value.') }}</div>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="form-row mb-2">
+          <div><div class="form-label">Invoice Number</div><div><strong>{{ inv.number|default('—') }}</strong></div></div>
+          <div><div class="form-label">Vendor</div><div>{{ inv.vendor_name|default('—') }}</div></div>
+        </div>
+
+        <div class="form-row mb-2">
+          <div><div class="form-label">PO Reference</div><div>{{ inv.po_number|default('—') }}</div></div>
+          <div><div class="form-label">Invoice Date</div><div>{{ inv.date|default('—') }}</div></div>
+        </div>
+
+        <div class="form-row mb-2">
+          <div>
+            <div class="form-label">Invoice Amount</div>
+            <div style="font-size: 1.25rem; font-weight: 700;">{{ inv.amount|default('—') }}</div>
+          </div>
+          <div>
+            <div class="form-label">PO Approved Amount</div>
+            <div style="font-size: 1.25rem; font-weight: 700; {{ 'color: var(--color-red);' if inv.has_mismatch is defined and inv.has_mismatch else '' }}">
+              {{ inv.po_amount|default('—') }}
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row mb-2">
+          <div>
+            <div class="form-label">Verification Status</div>
+            <div>
+              {% if inv.verification_status == 'verified' %}
+                <span class="badge badge-verified"><span class="badge-dot"></span> Verified</span>
+              {% elif inv.verification_status == 'rejected' %}
+                <span class="badge badge-rejected"><span class="badge-dot"></span> Rejected</span>
+              {% else %}
+                <span class="badge badge-pending"><span class="badge-dot"></span> Pending Verification</span>
+              {% endif %}
+            </div>
+          </div>
+          <div>
+            <div class="form-label">Payment Status</div>
+            <div>
+              {% if inv.payment_status == 'paid' %}
+                <span class="badge badge-paid"><span class="badge-dot"></span> Paid</span>
+              {% elif inv.payment_status == 'partial' %}
+                <span class="badge badge-partial"><span class="badge-dot"></span> Partially Paid</span>
+              {% else %}
+                <span class="badge badge-unpaid"><span class="badge-dot"></span> Unpaid</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        {% if inv.rejection_reason is defined and inv.rejection_reason %}
+        <div class="mt-2">
+          <div class="form-label">Recorded Rejection Reason</div>
+          <div class="mismatch-warning">
+            <span class="mismatch-icon">✗</span>
+            <span>{{ inv.rejection_reason }}</span>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close-modal="invoice-detail-{{ inv.id }}">Close</button>
+        {% if current_user is defined and current_user.role == 'admin' %}
+          {% if inv.verification_status == 'pending' %}
+            <form method="POST" action="{{ url_for('verify_invoice') }}" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+              <input type="hidden" name="invoice_id" value="{{ inv.id }}">
+              <input type="hidden" name="action" value="verify">
+              <button type="submit" class="btn btn-success" data-confirm="Verify this invoice against the purchase order?">Verify Invoice</button>
+            </form>
+          {% endif %}
+          {% if inv.verification_status == 'verified' and inv.payment_status != 'paid' %}
+            <button class="btn btn-primary" data-open-modal="update-payment-{{ inv.id }}">Update Payment</button>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# Reject Invoice Modal #}
+  {% if current_user is defined and current_user.role == 'admin' and inv.verification_status == 'pending' %}
+  <div class="modal-overlay" id="reject-invoice-{{ inv.id }}">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Reject Invoice</h3>
+        <button class="modal-close" data-close-modal="reject-invoice-{{ inv.id }}" aria-label="Close modal">&times;</button>
+      </div>
+      <form method="POST" action="{{ url_for('verify_invoice') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+        <input type="hidden" name="invoice_id" value="{{ inv.id }}">
+        <input type="hidden" name="action" value="reject">
+        <div class="modal-body">
+          <div class="confirm-message">
+            Reject invoice <strong>{{ inv.number|default('') }}</strong> from <strong>{{ inv.vendor_name|default('') }}</strong>?
+          </div>
+          <div class="form-group">
+            <label for="inv-reject-reason-{{ inv.id }}" class="form-label">
+              Rejection Reason <span class="required">*</span>
+            </label>
+            <textarea id="inv-reject-reason-{{ inv.id }}" name="rejection_reason"
+                      class="form-textarea" required
+                      placeholder="Explain reason for rejecting this invoice (e.g. price mismatch, missing items)…"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close-modal="reject-invoice-{{ inv.id }}">Cancel</button>
+          <button type="submit" class="btn btn-danger">Reject Invoice</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Update Payment Modal #}
+  {% if current_user is defined and current_user.role == 'admin' and inv.verification_status == 'verified' and inv.payment_status != 'paid' %}
+  <div class="modal-overlay" id="update-payment-{{ inv.id }}">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Record Payment for {{ inv.number }}</h3>
+        <button class="modal-close" data-close-modal="update-payment-{{ inv.id }}" aria-label="Close modal">&times;</button>
+      </div>
+      <form method="POST" action="{{ url_for('update_payment') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+        <input type="hidden" name="invoice_id" value="{{ inv.id }}">
+        <div class="modal-body">
+          <div class="form-row mb-2">
+            <div><div class="form-label">Invoice Total</div><div><strong>{{ inv.amount }}</strong></div></div>
+            <div><div class="form-label">Vendor</div><div>{{ inv.vendor_name }}</div></div>
+          </div>
+          <div class="form-group">
+            <label for="payment-status-{{ inv.id }}" class="form-label">Payment Status <span class="required">*</span></label>
+            <select id="payment-status-{{ inv.id }}" name="payment_status" class="form-select" required>
+              <option value="">Select status…</option>
+              <option value="partial" {% if inv.payment_status == 'partial' %}selected{% endif %}>Partially Paid</option>
+              <option value="paid">Paid in Full</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="payment-amount-{{ inv.id }}" class="form-label">Payment Amount</label>
+            <input type="number" id="payment-amount-{{ inv.id }}" name="payment_amount"
+                   class="form-input" step="0.01" min="0" placeholder="0.00" value="{{ inv.amount_paid|default('') }}">
+          </div>
+          <div class="form-group">
+            <label for="payment-ref-{{ inv.id }}" class="form-label">Transaction / Cheque Reference</label>
+            <input type="text" id="payment-ref-{{ inv.id }}" name="payment_reference" class="form-input"
+                   placeholder="e.g., TXN-984729482">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close-modal="update-payment-{{ inv.id }}">Cancel</button>
+          <button type="submit" class="btn btn-primary clay-button">Save Payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+{% endif %}
+
+{# Register Invoice Modal #}
+{% if current_user is defined and current_user.role == 'admin' %}
+<div class="modal-overlay" id="register-invoice-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3>Register New Vendor Invoice</h3>
+      <button class="modal-close" data-close-modal="register-invoice-modal" aria-label="Close modal">&times;</button>
+    </div>
+    <form method="POST" action="{{ url_for('register_invoice') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="inv-number" class="form-label">Invoice Number <span class="required">*</span></label>
+            <input type="text" id="inv-number" name="invoice_number" class="form-input" required
+                   placeholder="e.g., INV-2026-004">
+          </div>
+          <div class="form-group">
+            <label for="inv-date" class="form-label">Invoice Date <span class="required">*</span></label>
+            <input type="date" id="inv-date" name="invoice_date" class="form-input" required>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="inv-vendor" class="form-label">Vendor <span class="required">*</span></label>
+            <select id="inv-vendor" name="vendor_id" class="form-select" required>
+              <option value="">Select vendor…</option>
+              {% if approved_vendors is defined %}
+                {% for v in approved_vendors %}
+                  <option value="{{ v.id }}">{{ v.name }}</option>
+                {% endfor %}
+              {% endif %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="inv-po" class="form-label">Matching Purchase Order <span class="required">*</span></label>
+            <select id="inv-po" name="po_id" class="form-select" required>
+              <option value="">Select PO…</option>
+              {% if purchase_orders is defined %}
+                {% for po in purchase_orders %}
+                  <option value="{{ po.id }}">{{ po.number }} — {{ po.vendor_name }} ({{ po.total }})</option>
+                {% endfor %}
+              {% endif %}
+            </select>
+            <div class="form-hint">The invoice amount will be checked against this PO.</div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="inv-amount" class="form-label">Invoice Amount <span class="required">*</span></label>
+            <input type="number" id="inv-amount" name="amount" class="form-input" required
+                   step="0.01" min="0" placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label for="inv-due-date" class="form-label">Payment Due Date</label>
+            <input type="date" id="inv-due-date" name="due_date" class="form-input">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="inv-notes" class="form-label">Notes &amp; Particulars</label>
+          <textarea id="inv-notes" name="notes" class="form-textarea"
+                    placeholder="Invoice reference, tax breakdown, or delivery confirmation details…"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close-modal="register-invoice-modal">Cancel</button>
+        <button type="submit" class="btn btn-primary clay-button">Register Invoice</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
