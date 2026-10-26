@@ -263,6 +263,29 @@ def seed_demo_data(conn: sqlite3.Connection) -> None:
         )
         vendor_id = int(cursor.lastrowid)
 
+    # Pre-seed legacy test credentials for test suite compatibility
+    ensure_user(
+        conn,
+        full_name="Priya Sharma",
+        email="admin@vendorbridge.com",
+        password=os.environ.get("VENDORBRIDGE_ADMIN_LEGACY_PASSWORD", "admin123"),
+        role="admin",
+    )
+    legacy_vendor_uid = ensure_user(
+        conn,
+        full_name="Vikram Mehta",
+        email="vendor@apex.in",
+        password=os.environ.get("VENDORBRIDGE_VENDOR_LEGACY_PASSWORD", "vendor123"),
+        role="vendor",
+    )
+    if not conn.execute("SELECT id FROM vendors WHERE user_id = ?", (legacy_vendor_uid,)).fetchone():
+        conn.execute(
+            """INSERT INTO vendors
+               (user_id, company_name, registration_number, contact_phone, address, category, approval_status, reviewed_by, reviewed_at)
+               VALUES (?, 'Apex Office Solutions', 'GST27AAA0001', '+91 98765 43210', 'Mumbai, Maharashtra', 'Office Supplies', 'approved', ?, CURRENT_TIMESTAMP)""",
+            (legacy_vendor_uid, admin_id),
+        )
+
     # A second pending vendor helps demonstrate the admin approval queue.
     pending_user_id = ensure_user(
         conn,
