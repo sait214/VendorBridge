@@ -22,12 +22,19 @@ def get_current_user():
     """Retrieve the currently logged-in user or None from database."""
     user_id = session.get('user_id')
     if user_id:
-        return db.get_user_by_id(user_id)
+        user = db.get_user_by_id(user_id)
+        if not user:
+            session.clear()
+            return None
+        return user
     email = session.get('user_email')
     if email:
         user = db.get_user_by_email(email)
-        if user:
-            session['user_id'] = user['id']
+        if not user:
+            session.clear()
+            return None
+        session['user_id'] = user['id']
+        session['user_role'] = user.get('role', 'vendor')
         return user
     return None
 
@@ -36,27 +43,33 @@ def get_current_user():
 @app.before_request
 def require_login():
     """Ensure unauthenticated users are redirected to login for protected pages."""
-    public_endpoints = {'login', 'register', 'static'}
+    public_endpoints = {'login', 'register', 'static', 'index'}
     if request.endpoint and request.endpoint not in public_endpoints:
         if not get_current_user():
-            if request.endpoint != 'index':
-                flash('Please sign in to access VendorBridge.', 'warning')
+            flash('Please sign in to access VendorBridge.', 'warning')
             return redirect(url_for('login'))
 
 
 # ── Root Route ──
 @app.route('/')
 def index():
-    if get_current_user():
-        return redirect(url_for('dashboard'))
+    """Default landing route: unauthenticated users see Login; authenticated users reach their role dashboard."""
+    user = get_current_user()
+    if user:
+        if user.get('role') == 'admin':
+            return redirect(url_for('admin_dashboard'))
+        return redirect(url_for('vendor_dashboard'))
     return redirect(url_for('login'))
 
 
 # ── Authentication Routes ──
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if get_current_user():
-        return redirect(url_for('dashboard'))
+    user = get_current_user()
+    if user:
+        if user.get('role') == 'admin':
+            return redirect(url_for('admin_dashboard'))
+        return redirect(url_for('vendor_dashboard'))
 
     form_errors = {}
     mode = request.args.get('mode', 'login')
@@ -84,8 +97,8 @@ def login():
             session.clear()
             session['user_id'] = user['id']
             session['user_email'] = user['email']
-            if remember:
-                session.permanent = True
+            session['user_role'] = user['role']
+            session.permanent = remember
 
             status_val = (user.get('status') or 'Active').lower()
             if status_val == 'pending':
@@ -94,7 +107,10 @@ def login():
                 flash("Notice: Your account application was rejected. Please contact procurement support.", 'error')
             else:
                 flash(f"Welcome back, {user['name']}!", 'success')
-            return redirect(url_for('dashboard'))
+
+            if user.get('role') == 'admin':
+                return redirect(url_for('admin_dashboard'))
+            return redirect(url_for('vendor_dashboard'))
         else:
             form_errors['general'] = 'Invalid email or password. Please verify your credentials.'
             flash('Invalid email or password. Please check your credentials.', 'error')
@@ -106,8 +122,11 @@ def login():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     """Vendor Self-Registration route."""
-    if get_current_user():
-        return redirect(url_for('dashboard'))
+    user = get_current_user()
+    if user:
+        if user.get('role') == 'admin':
+            return redirect(url_for('admin_dashboard'))
+        return redirect(url_for('vendor_dashboard'))
 
     if request.method == 'POST':
         return handle_registration()
@@ -178,8 +197,26 @@ def logout():
 # ── Dashboard & Profile ──
 @app.route('/dashboard')
 def dashboard():
+    """Role-aware dashboard dispatcher that preserves backward compatibility."""
     user = get_current_user()
-    is_vendor = user and user.get('role') == 'vendor'
+    if not user:
+        flash('Please sign in to access VendorBridge.', 'warning')
+        return redirect(url_for('login'))
+    if user.get('role') == 'admin':
+        return redirect(url_for('admin_dashboard'))
+    return redirect(url_for('vendor_dashboard'))
+
+
+@app.route('/admin/dashboard')
+def admin_dashboard():
+    """Admin Dashboard route with role authorization."""
+    user = get_current_user()
+    if not user:
+        flash('Please sign in to access VendorBridge.', 'warning')
+        return redirect(url_for('login'))
+    if user.get('role') != 'admin':
+        flash('Unauthorized: Vendor accounts cannot access the Admin Dashboard.', 'warning')
+        return redirect(url_for('vendor_dashboard'))
 
     stats = db.get_dashboard_stats(user)
     recent_rfqs = db.get_rfqs(user)[:4]
@@ -191,13 +228,42 @@ def dashboard():
         active_page='dashboard',
         current_user=user,
         stats=stats,
-        recent_activity=recent_activity if not is_vendor else [],
+        recent_activity=recent_activity,
         pending_tasks=[],
         recent_rfqs=recent_rfqs,
         recent_orders=recent_orders,
-        pending_vendor_count=pending_vendors if not is_vendor else 0,
+        pending_vendor_count=pending_vendors,
         active_rfq_count=active_rfq_count,
-        pending_approval_count=pending_approval_count if not is_vendor else 0,
+        pending_approval_count=pending_approval_count,
+    )
+
+
+@app.route('/vendor/dashboard')
+def vendor_dashboard():
+    """Vendor Dashboard route with role authorization."""
+    user = get_current_user()
+    if not user:
+        flash('Please sign in to access VendorBridge.', 'warning')
+        return redirect(url_for('login'))
+    if user.get('role') == 'admin':
+        return redirect(url_for('admin_dashboard'))
+
+    stats = db.get_dashboard_stats(user)
+    recent_rfqs = db.get_rfqs(user)[:4]
+    recent_orders = db.get_purchase_orders(user)[:4]
+    pending_vendors, active_rfq_count, pending_approval_count = db.get_system_counts()
+
+    return render_template('dashboard.html',
+        active_page='dashboard',
+        current_user=user,
+        stats=stats,
+        recent_activity=[],
+        pending_tasks=[],
+        recent_rfqs=recent_rfqs,
+        recent_orders=recent_orders,
+        pending_vendor_count=0,
+        active_rfq_count=active_rfq_count,
+        pending_approval_count=0,
     )
 
 
