@@ -104,105 +104,73 @@ def verify_user_password(stored_hash: str, candidate_password: str) -> bool:
 # Users & Authentication
 # ─────────────────────────────────────────────────────────────────────────────
 
+_USER_BASE_QUERY = """
+    SELECT
+        u.id,
+        u.full_name AS name,
+        u.email,
+        u.password_hash AS password,
+        u.role,
+        u.is_active,
+        u.created_at,
+        v.id AS vendor_id,
+        v.company_name AS company,
+        v.contact_phone AS phone,
+        v.address,
+        v.category,
+        v.approval_status,
+        v.rejection_reason
+    FROM users u
+    LEFT JOIN vendors v ON u.id = v.user_id
+"""
+
+
+def _format_user_dict(row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
+    """Enriches a raw database user row with presentation attributes used across templates."""
+    if not row:
+        return None
+
+    data = dict(row)
+    if data["role"] == "admin":
+        data["role_title"] = "Procurement Officer & System Admin"
+        data["department"] = "Central Procurement & Strategic Sourcing"
+        data["status"] = "Active"
+    else:
+        status_val = (data.get("approval_status") or "pending").lower()
+        if status_val == "approved":
+            data["role_title"] = "Authorized Vendor Partner"
+            data["status"] = "Approved"
+        elif status_val == "rejected":
+            data["role_title"] = "Vendor Applicant (Rejected)"
+            data["status"] = "Rejected"
+        else:
+            data["role_title"] = "Vendor Partner (Pending Approval)"
+            data["status"] = "Pending"
+        data["department"] = f"{data.get('company') or data['name']} — Sales & Bid Team"
+
+    data["bio"] = f"Account registered for {data.get('company') or data['name']}."
+    return data
+
+
 def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     """Fetches user and associated vendor record by email address."""
     if not email:
         return None
     db = get_db()
-    query = """
-        SELECT
-            u.id,
-            u.full_name AS name,
-            u.email,
-            u.password_hash AS password,
-            u.role,
-            u.is_active,
-            u.created_at,
-            v.id AS vendor_id,
-            v.company_name AS company,
-            v.contact_phone AS phone,
-            v.address,
-            v.category,
-            v.approval_status,
-            v.rejection_reason
-        FROM users u
-        LEFT JOIN vendors v ON u.id = v.user_id
-        WHERE u.email = ? COLLATE NOCASE
-    """
-    row = db.execute(query, (email.strip().lower(),)).fetchone()
-    if not row:
-        return None
-
-    data = dict(row)
-    # Populate presentation fields expected by existing templates
-    if data["role"] == "admin":
-        data["role_title"] = "Procurement Officer & System Admin"
-        data["department"] = "Central Procurement & Strategic Sourcing"
-        data["status"] = "Active"
-    else:
-        status_val = (data.get("approval_status") or "pending").lower()
-        if status_val == "approved":
-            data["role_title"] = "Authorized Vendor Partner"
-            data["status"] = "Approved"
-        elif status_val == "rejected":
-            data["role_title"] = "Vendor Applicant (Rejected)"
-            data["status"] = "Rejected"
-        else:
-            data["role_title"] = "Vendor Partner (Pending Approval)"
-            data["status"] = "Pending"
-        data["department"] = f"{data.get('company') or data['name']} — Sales & Bid Team"
-
-    data["bio"] = f"Account registered for {data.get('company') or data['name']}."
-    return data
+    row = db.execute(
+        f"{_USER_BASE_QUERY} WHERE u.email = ? COLLATE NOCASE",
+        (email.strip().lower(),)
+    ).fetchone()
+    return _format_user_dict(row)
 
 
 def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
     """Fetches user and associated vendor record by user ID."""
-    db = get_db()
-    query = """
-        SELECT
-            u.id,
-            u.full_name AS name,
-            u.email,
-            u.password_hash AS password,
-            u.role,
-            u.is_active,
-            u.created_at,
-            v.id AS vendor_id,
-            v.company_name AS company,
-            v.contact_phone AS phone,
-            v.address,
-            v.category,
-            v.approval_status,
-            v.rejection_reason
-        FROM users u
-        LEFT JOIN vendors v ON u.id = v.user_id
-        WHERE u.id = ?
-    """
-    row = db.execute(query, (user_id,)).fetchone()
-    if not row:
+    if not user_id:
         return None
-
-    data = dict(row)
-    if data["role"] == "admin":
-        data["role_title"] = "Procurement Officer & System Admin"
-        data["department"] = "Central Procurement & Strategic Sourcing"
-        data["status"] = "Active"
-    else:
-        status_val = (data.get("approval_status") or "pending").lower()
-        if status_val == "approved":
-            data["role_title"] = "Authorized Vendor Partner"
-            data["status"] = "Approved"
-        elif status_val == "rejected":
-            data["role_title"] = "Vendor Applicant (Rejected)"
-            data["status"] = "Rejected"
-        else:
-            data["role_title"] = "Vendor Partner (Pending Approval)"
-            data["status"] = "Pending"
-        data["department"] = f"{data.get('company') or data['name']} — Sales & Bid Team"
-
-    data["bio"] = f"Account registered for {data.get('company') or data['name']}."
-    return data
+    db = get_db()
+    row = db.execute(f"{_USER_BASE_QUERY} WHERE u.id = ?", (user_id,)).fetchone()
+    return _format_user_dict(row)
 
 
 def update_user_profile(
@@ -234,6 +202,26 @@ def update_user_profile(
 # ─────────────────────────────────────────────────────────────────────────────
 # Vendor Management & Registration
 # ─────────────────────────────────────────────────────────────────────────────
+
+_VENDOR_BASE_QUERY = """
+    SELECT
+        v.id,
+        v.user_id,
+        v.company_name AS name,
+        v.company_name AS company,
+        u.full_name AS contact_name,
+        u.email,
+        v.contact_phone AS phone,
+        v.category,
+        v.approval_status AS status,
+        v.address,
+        v.registration_number AS tax_id,
+        v.rejection_reason,
+        SUBSTR(v.created_at, 1, 10) AS created_at
+    FROM vendors v
+    JOIN users u ON v.user_id = u.id
+"""
+
 
 def get_vendors(
     status: Optional[str] = None,
@@ -275,27 +263,7 @@ def get_vendors(
         params.extend([pattern, pattern, pattern, pattern, pattern])
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-    query = f"""
-        SELECT
-            v.id,
-            v.user_id,
-            v.company_name AS name,
-            v.company_name AS company,
-            u.full_name AS contact_name,
-            u.email,
-            v.contact_phone AS phone,
-            v.category,
-            v.approval_status AS status,
-            v.address,
-            v.registration_number AS tax_id,
-            v.rejection_reason,
-            SUBSTR(v.created_at, 1, 10) AS created_at
-        FROM vendors v
-        JOIN users u ON v.user_id = u.id
-        {where_clause}
-        ORDER BY v.id DESC
-    """
+    query = f"{_VENDOR_BASE_QUERY} {where_clause} ORDER BY v.id DESC"
     rows = db.execute(query, tuple(params)).fetchall()
     return [dict(r) for r in rows]
 
@@ -303,52 +271,14 @@ def get_vendors(
 def get_vendor_by_id(vendor_id: int) -> Optional[Dict[str, Any]]:
     """Fetches a single vendor record by its primary key ID."""
     db = get_db()
-    query = """
-        SELECT
-            v.id,
-            v.user_id,
-            v.company_name AS name,
-            v.company_name AS company,
-            u.full_name AS contact_name,
-            u.email,
-            v.contact_phone AS phone,
-            v.category,
-            v.approval_status AS status,
-            v.address,
-            v.registration_number AS tax_id,
-            v.rejection_reason,
-            SUBSTR(v.created_at, 1, 10) AS created_at
-        FROM vendors v
-        JOIN users u ON v.user_id = u.id
-        WHERE v.id = ?
-    """
-    row = db.execute(query, (vendor_id,)).fetchone()
+    row = db.execute(f"{_VENDOR_BASE_QUERY} WHERE v.id = ?", (vendor_id,)).fetchone()
     return dict(row) if row else None
 
 
 def get_vendor_by_user_id(user_id: int) -> Optional[Dict[str, Any]]:
     """Fetches vendor record belonging to a specific user ID."""
     db = get_db()
-    query = """
-        SELECT
-            v.id,
-            v.user_id,
-            v.company_name AS name,
-            v.company_name AS company,
-            u.full_name AS contact_name,
-            u.email,
-            v.contact_phone AS phone,
-            v.category,
-            v.approval_status AS status,
-            v.address,
-            v.registration_number AS tax_id,
-            v.rejection_reason,
-            SUBSTR(v.created_at, 1, 10) AS created_at
-        FROM vendors v
-        JOIN users u ON v.user_id = u.id
-        WHERE v.user_id = ?
-    """
-    row = db.execute(query, (user_id,)).fetchone()
+    row = db.execute(f"{_VENDOR_BASE_QUERY} WHERE v.user_id = ?", (user_id,)).fetchone()
     return dict(row) if row else None
 
 
@@ -857,6 +787,17 @@ def get_pending_approvals() -> List[Dict[str, Any]]:
         data["bid_amount"] = paise_to_inr_str(data["total_price_paise"])
         approvals.append(data)
     return approvals
+
+
+def count_pending_approvals() -> int:
+    """Returns the total number of quotations awaiting purchase order authorization."""
+    db = get_db()
+    row = db.execute(
+        """SELECT COUNT(*) FROM quotations q
+           LEFT JOIN purchase_orders po ON q.id = po.quotation_id
+           WHERE q.status = 'selected' AND (po.id IS NULL OR po.status = 'draft')"""
+    ).fetchone()
+    return int(row[0]) if row else 0
 
 
 def authorize_procurement_proposal(approval_id: int, admin_user_id: int) -> Optional[str]:
@@ -1579,7 +1520,7 @@ def get_dashboard_stats(user: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     # Administrative broad metrics
     total_vendors = db.execute("SELECT COUNT(*) FROM vendors").fetchone()[0]
     active_rfqs = db.execute("SELECT COUNT(*) FROM rfqs WHERE status = 'open'").fetchone()[0]
-    pending_approvals = len(get_pending_approvals())
+    pending_approvals = count_pending_approvals()
     pos_count = db.execute("SELECT COUNT(*) FROM purchase_orders").fetchone()[0]
     unpaid_invs = db.execute("SELECT COUNT(*) FROM invoices WHERE status != 'paid'").fetchone()[0]
 
@@ -1601,5 +1542,5 @@ def get_system_counts() -> Tuple[int, int, int]:
     active_rfqs = db.execute(
         "SELECT COUNT(*) FROM rfqs WHERE status = 'open'"
     ).fetchone()[0]
-    pending_approvals = len(get_pending_approvals())
+    pending_approvals = count_pending_approvals()
     return pending_vendors, active_rfqs, pending_approvals

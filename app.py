@@ -6,6 +6,7 @@ Integrated with SQLite database layer (database.py).
 import os
 import re
 from datetime import datetime, timedelta
+from typing import Optional
 from flask import Flask, render_template, request, redirect, url_for, flash, session, abort, Response
 import database as db
 import pdf_generator
@@ -37,6 +38,17 @@ def get_current_user():
         session['user_role'] = user.get('role', 'vendor')
         return user
     return None
+
+
+def get_nav_badges(user):
+    """Returns badge counts for sidebar navigation based on user role."""
+    is_vendor = bool(user and user.get('role') == 'vendor')
+    pending_vendors, active_rfqs, pending_approvals = db.get_system_counts()
+    return {
+        'pending_vendor_count': 0 if is_vendor else pending_vendors,
+        'active_rfq_count': active_rfqs,
+        'pending_approval_count': 0 if is_vendor else pending_approvals,
+    }
 
 
 # ── Authentication Protection Hook ──
@@ -222,7 +234,6 @@ def admin_dashboard():
     recent_rfqs = db.get_rfqs(user)[:4]
     recent_orders = db.get_purchase_orders(user)[:4]
     recent_activity = db.get_audit_logs(limit=10)
-    pending_vendors, active_rfq_count, pending_approval_count = db.get_system_counts()
 
     return render_template('dashboard.html',
         active_page='dashboard',
@@ -232,9 +243,7 @@ def admin_dashboard():
         pending_tasks=[],
         recent_rfqs=recent_rfqs,
         recent_orders=recent_orders,
-        pending_vendor_count=pending_vendors,
-        active_rfq_count=active_rfq_count,
-        pending_approval_count=pending_approval_count,
+        **get_nav_badges(user),
     )
 
 
@@ -251,7 +260,6 @@ def vendor_dashboard():
     stats = db.get_dashboard_stats(user)
     recent_rfqs = db.get_rfqs(user)[:4]
     recent_orders = db.get_purchase_orders(user)[:4]
-    pending_vendors, active_rfq_count, pending_approval_count = db.get_system_counts()
 
     return render_template('dashboard.html',
         active_page='dashboard',
@@ -261,22 +269,17 @@ def vendor_dashboard():
         pending_tasks=[],
         recent_rfqs=recent_rfqs,
         recent_orders=recent_orders,
-        pending_vendor_count=0,
-        active_rfq_count=active_rfq_count,
-        pending_approval_count=0,
+        **get_nav_badges(user),
     )
 
 
 @app.route('/profile')
 def profile():
     user = get_current_user()
-    pending_vendors, active_rfq_count, pending_approval_count = db.get_system_counts()
     return render_template('dashboard.html',
         active_page='profile',
         current_user=user,
-        pending_vendor_count=pending_vendors if (user and user.get('role') == 'admin') else 0,
-        active_rfq_count=active_rfq_count,
-        pending_approval_count=pending_approval_count if (user and user.get('role') == 'admin') else 0,
+        **get_nav_badges(user),
     )
 
 
@@ -312,8 +315,6 @@ def vendors():
         user_id=user['id'] if is_vendor else None,
     )
 
-    pending_vendors, active_rfq_count, pending_approval_count = db.get_system_counts()
-
     return render_template('vendors.html',
         active_page='vendors',
         current_user=user,
@@ -321,9 +322,7 @@ def vendors():
         total_vendors=len(vendor_data),
         page=1,
         total_pages=1,
-        pending_vendor_count=pending_vendors if not is_vendor else 0,
-        active_rfq_count=active_rfq_count,
-        pending_approval_count=pending_approval_count if not is_vendor else 0,
+        **get_nav_badges(user),
     )
 
 
@@ -431,7 +430,6 @@ def procurement():
 
     pending_approvals = db.get_pending_approvals() if not is_vendor else []
     approved_vendors = db.get_vendors(status='approved') if not is_vendor else []
-    pending_vendors, active_rfq_count, pending_approval_count = db.get_system_counts()
 
     return render_template('procurement.html',
         active_page='procurement',
@@ -446,9 +444,7 @@ def procurement():
         purchase_orders=visible_pos,
         procurement_history=[],
         approved_vendors=approved_vendors,
-        pending_vendor_count=pending_vendors if not is_vendor else 0,
-        active_rfq_count=active_rfq_count,
-        pending_approval_count=pending_approval_count if not is_vendor else 0,
+        **get_nav_badges(user),
     )
 
 
@@ -625,8 +621,6 @@ def finance():
     orders = db.get_purchase_orders(user=user)
     audit_records = db.get_audit_logs(limit=50) if not is_vendor else []
 
-    pending_vendors, active_rfq_count, pending_approval_count = db.get_system_counts()
-
     return render_template('finance.html',
         active_page='finance',
         active_tab=active_tab,
@@ -642,9 +636,7 @@ def finance():
         audit_logs=audit_records,
         purchase_orders=orders,
         approved_vendors=db.get_vendors(status='approved') if not is_vendor else [],
-        pending_vendor_count=pending_vendors if not is_vendor else 0,
-        active_rfq_count=active_rfq_count,
-        pending_approval_count=pending_approval_count if not is_vendor else 0,
+        **get_nav_badges(user),
     )
 
 
@@ -753,6 +745,25 @@ def update_payment():
 
 # ── PDF Download Routes & Authorization ──
 
+def make_pdf_download_response(pdf_bytes: bytes, filename: str) -> Response:
+    """Builds an HTTP response configured for immediate PDF download."""
+    return Response(
+        pdf_bytes,
+        mimetype='application/pdf',
+        headers={
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+    )
+
+
+def check_vendor_record_access(user: dict, record_vendor_id: Optional[int], record_name: str = "document"):
+    """Enforces that vendors can only access records belonging to their own organization."""
+    if user.get('role') == 'vendor':
+        if record_vendor_id != user.get('vendor_id'):
+            abort(403, description=f"Unauthorized: You do not have permission to view this {record_name}.")
+
+
 @app.route('/procurement/order/<int:po_id>/pdf')
 def download_po_pdf(po_id):
     """
@@ -768,22 +779,11 @@ def download_po_pdf(po_id):
     if not po:
         abort(404, description="Purchase Order not found.")
 
-    # Server-side vendor isolation check
-    if user.get('role') == 'vendor':
-        if po.get('vendor_id') != user.get('vendor_id'):
-            abort(403, description="Unauthorized: You do not have permission to view this Purchase Order.")
+    check_vendor_record_access(user, po.get('vendor_id'), "Purchase Order")
 
     try:
         pdf_bytes = pdf_generator.generate_po_pdf(po)
-        filename = f"VendorBridge-PO-{po['po_number']}.pdf"
-        return Response(
-            pdf_bytes,
-            mimetype='application/pdf',
-            headers={
-                'Content-Disposition': f'attachment; filename="{filename}"',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-            },
-        )
+        return make_pdf_download_response(pdf_bytes, f"VendorBridge-PO-{po['po_number']}.pdf")
     except Exception as e:
         flash(f"Failed to generate Purchase Order PDF: {str(e)}", 'error')
         return redirect(url_for('procurement', tab='orders'))
@@ -804,22 +804,11 @@ def download_invoice_pdf(invoice_id):
     if not inv:
         abort(404, description="Invoice record not found.")
 
-    # Server-side vendor isolation check
-    if user.get('role') == 'vendor':
-        if inv.get('vendor_id') != user.get('vendor_id'):
-            abort(403, description="Unauthorized: You do not have permission to view this invoice.")
+    check_vendor_record_access(user, inv.get('vendor_id'), "invoice")
 
     try:
         pdf_bytes = pdf_generator.generate_invoice_pdf(inv)
-        filename = f"VendorBridge-Invoice-{inv['invoice_number']}.pdf"
-        return Response(
-            pdf_bytes,
-            mimetype='application/pdf',
-            headers={
-                'Content-Disposition': f'attachment; filename="{filename}"',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-            },
-        )
+        return make_pdf_download_response(pdf_bytes, f"VendorBridge-Invoice-{inv['invoice_number']}.pdf")
     except Exception as e:
         flash(f"Failed to generate Invoice PDF: {str(e)}", 'error')
         return redirect(url_for('finance', tab='invoices'))
@@ -845,22 +834,11 @@ def download_payment_receipt_pdf(invoice_id):
         flash("Payment receipt unavailable: Payment has not yet been recorded for this invoice.", "warning")
         return redirect(url_for('finance', tab='payments'))
 
-    # Server-side vendor isolation check
-    if user.get('role') == 'vendor':
-        if inv.get('vendor_id') != user.get('vendor_id'):
-            abort(403, description="Unauthorized: You do not have permission to view this payment receipt.")
+    check_vendor_record_access(user, inv.get('vendor_id'), "payment receipt")
 
     try:
         pdf_bytes = pdf_generator.generate_payment_receipt_pdf(inv)
-        filename = f"VendorBridge-PaymentReceipt-{inv['invoice_number']}.pdf"
-        return Response(
-            pdf_bytes,
-            mimetype='application/pdf',
-            headers={
-                'Content-Disposition': f'attachment; filename="{filename}"',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-            },
-        )
+        return make_pdf_download_response(pdf_bytes, f"VendorBridge-PaymentReceipt-{inv['invoice_number']}.pdf")
     except Exception as e:
         flash(f"Failed to generate Payment Receipt PDF: {str(e)}", 'error')
         return redirect(url_for('finance', tab='payments'))
