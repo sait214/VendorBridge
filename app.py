@@ -237,6 +237,7 @@ def login():
 
     form_errors = {}
     mode = request.args.get('mode', 'login')
+    active_role = request.args.get('role', 'user')
 
     if request.method == 'POST':
         action = request.form.get('action', 'login')
@@ -246,9 +247,17 @@ def login():
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
         remember = bool(request.form.get('remember'))
+        login_type = request.form.get('login_type', 'user')
+        active_role = login_type
 
         user = USERS.get(email)
         if user and verify_password(user['password'], password):
+            # If user submitted through Admin login but account is a vendor
+            if login_type == 'admin' and user.get('role') != 'admin':
+                form_errors['general'] = 'This is a Vendor account. Please use the User Login option.'
+                flash('This is a Vendor account. Please use the User Login option.', 'warning')
+                return render_template('login.html', form_errors=form_errors, mode='login', active_role='user')
+
             session.clear()
             session['user_email'] = email
             if remember:
@@ -264,8 +273,9 @@ def login():
         else:
             form_errors['general'] = 'Invalid email or password. Please verify your credentials.'
             flash('Invalid email or password. Please check your credentials.', 'error')
+            return render_template('login.html', form_errors=form_errors, mode='login', active_role=active_role)
 
-    return render_template('login.html', form_errors=form_errors, mode=mode)
+    return render_template('login.html', form_errors=form_errors, mode=mode, active_role=active_role)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -276,7 +286,7 @@ def register():
     if request.method == 'POST':
         return handle_registration()
 
-    return render_template('login.html', mode='register', form_errors={})
+    return render_template('login.html', mode='register', form_errors={}, active_role='user')
 
 def handle_registration():
     """Processes vendor registration with strict validation and secure hashing."""

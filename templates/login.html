@@ -12,25 +12,11 @@
   <div class="login-container">
     <div class="login-card clay-card animate-in">
 
-      {# ----- Brand Logo & Title ----- #}
+      {# ----- Brand Logo & Title with Tactile Clay Icon ----- #}
       <div class="login-brand">
-        <div class="login-brand-icon">⬡</div>
+        <div class="login-brand-icon clay-emoji clay-emoji-xl">⬡</div>
         <h1>VendorBridge</h1>
         <p>Procurement Management System</p>
-      </div>
-
-      {# ----- Mode Switch Tabs ----- #}
-      <div class="d-flex mb-3" style="background: var(--bg-main); border-radius: var(--radius-sm); padding: 4px; box-shadow: var(--shadow-inset-sm);">
-        <a href="{{ url_for('login') }}"
-           class="btn btn-sm text-center flex-1 {% if mode != 'register' %}btn-primary clay-button{% else %}btn-ghost{% endif %}"
-           style="border-radius: var(--radius-sm); text-decoration: none; padding: 8px 12px; font-weight: 600;">
-          Sign In
-        </a>
-        <a href="{{ url_for('register') }}"
-           class="btn btn-sm text-center flex-1 {% if mode == 'register' %}btn-primary clay-button{% else %}btn-ghost{% endif %}"
-           style="border-radius: var(--radius-sm); text-decoration: none; padding: 8px 12px; font-weight: 600;">
-          Register as Vendor
-        </a>
       </div>
 
       {# ----- Flash Messages ----- #}
@@ -47,11 +33,14 @@
 
       {% if mode == 'register' %}
       {# ================================================================
-         VENDOR SELF-REGISTRATION FORM (Requirement D)
+         VENDOR SELF-REGISTRATION FORM
          ================================================================ #}
-      <div class="mb-3">
-        <h3 style="font-size: 1.15rem; color: var(--color-primary); margin-bottom: 4px;">Supplier Partnership Application</h3>
-        <p class="text-sm text-muted">Complete the profile below to register your business for tender bids.</p>
+      <div class="login-role-header mb-3">
+        <span class="login-role-badge user-badge">
+          <span class="clay-emoji clay-emoji-sm" style="width: 18px; height: 18px; font-size: 0.75rem;">📝</span>
+          Supplier Partnership Application
+        </span>
+        <p class="text-sm text-muted mt-1">Complete the profile below to register your business for corporate tender bids.</p>
       </div>
 
       <form method="POST" action="{{ url_for('register') }}" novalidate>
@@ -147,7 +136,9 @@
               required
               autocomplete="new-password"
             >
-            <button type="button" class="password-toggle" aria-label="Show password" title="Toggle password visibility">◉</button>
+            <button type="button" class="password-toggle" aria-label="Show password" title="Toggle password visibility">
+              <span class="clay-emoji clay-emoji-sm" style="margin: 0;">👁️</span>
+            </button>
           </div>
           {% if form_errors is defined and form_errors.password %}
             <div class="form-error">{{ form_errors.password }}</div>
@@ -168,114 +159,206 @@
               required
               autocomplete="new-password"
             >
-            <button type="button" class="password-toggle" aria-label="Show password" title="Toggle password visibility">◉</button>
+            <button type="button" class="password-toggle" aria-label="Show password" title="Toggle password visibility">
+              <span class="clay-emoji clay-emoji-sm" style="margin: 0;">👁️</span>
+            </button>
           </div>
           {% if form_errors is defined and form_errors.confirm_password %}
             <div class="form-error">{{ form_errors.confirm_password }}</div>
           {% endif %}
         </div>
 
-        <div class="mb-3 p-2 text-sm" style="background: var(--bg-surface-raised); border-radius: var(--radius-sm); border-left: 3px solid var(--color-primary);">
-          ℹ <strong>Review Process:</strong> All self-registered vendor accounts are created with <em>Pending</em> approval status. Features like RFQ bid submission become accessible after procurement administrator verification.
+        <div class="mb-3 p-2 text-sm d-flex gap-1 align-start" style="background: var(--bg-surface-raised); border-radius: var(--radius-sm); border-left: 3px solid var(--color-primary);">
+          <span class="clay-emoji clay-emoji-sm" style="flex-shrink: 0; margin-top: 1px;">ℹ️</span>
+          <div>
+            <strong>Review Process:</strong> All self-registered vendor accounts are created with <em>Pending</em> status and become active for bid participation upon procurement administrator review.
+          </div>
         </div>
 
-        <button type="submit" class="btn btn-primary clay-button btn-lg w-full mb-2">
+        <button type="submit" class="btn btn-primary clay-button btn-lg w-full mb-3">
           Submit Vendor Registration
         </button>
 
         <p class="text-center text-sm text-muted">
-          Already registered? <a href="{{ url_for('login') }}" style="color: var(--color-primary); font-weight: 600;">Sign in here →</a>
+          Already registered? <a href="{{ url_for('login') }}" style="color: var(--color-primary); font-weight: 700; text-decoration: underline;">Back to Login →</a>
         </p>
       </form>
 
       {% else %}
       {# ================================================================
-         STANDARD SIGN IN FORM
+         SEPARATE USER AND ADMIN LOGIN (SAME PAGE, SAME CARD)
          ================================================================ #}
-      <form method="POST" action="{{ url_for('login') }}" novalidate>
-        <input type="hidden" name="action" value="login">
-
-        <div class="form-group">
-          <label for="email" class="form-label">
-            Email Address <span class="required">*</span>
-          </label>
-          <input
-            type="email"
-            id="email"
-            name="email"
-            class="form-input {% if form_errors is defined and form_errors.email %}error{% endif %}"
-            placeholder="name@company.com"
-            required
-            autocomplete="email"
-            value="{{ request.form.get('email', '') if request is defined else '' }}"
-          >
-          {% if form_errors is defined and form_errors.email %}
-            <div class="form-error">{{ form_errors.email }}</div>
-          {% endif %}
-        </div>
-
-        <div class="form-group">
-          <label for="password" class="form-label">
-            Password <span class="required">*</span>
-          </label>
-          <div class="input-password-wrapper">
-            <input
-              type="password"
-              id="password"
-              name="password"
-              class="form-input {% if form_errors is defined and form_errors.password %}error{% endif %}"
-              placeholder="Enter your password"
-              required
-              autocomplete="current-password"
-            >
-            <button type="button" class="password-toggle" aria-label="Show password" title="Toggle password visibility">◉</button>
-          </div>
-          {% if form_errors is defined and form_errors.password %}
-            <div class="form-error">{{ form_errors.password }}</div>
-          {% endif %}
-        </div>
-
-        <div class="login-footer-row">
-          <label class="form-checkbox">
-            <input type="checkbox" name="remember" value="1">
-            <span>Remember me</span>
-          </label>
-          <a href="#" class="text-sm" style="color: var(--color-primary);" onclick="alert('Demo Mode: Click any credential chip below to populate credentials.'); return false;">Forgot password?</a>
-        </div>
-
-        <button type="submit" class="btn btn-primary clay-button btn-lg w-full mb-3">
-          Sign In
+      
+      {# Role Selector Tabs in Same Card #}
+      <div class="login-role-tabs" role="tablist" aria-label="Choose Login Role">
+        <button type="button"
+                class="login-role-tab {% if active_role != 'admin' %}active{% endif %}"
+                id="tab-btn-user"
+                data-role="user"
+                role="tab"
+                aria-selected="{% if active_role != 'admin' %}true{% else %}false{% endif %}"
+                aria-controls="panel-user-login">
+          <span class="clay-emoji clay-emoji-sm">👤</span>
+          <span>User Login</span>
         </button>
-
-        {# Clearly visible Register as Vendor link (Requirement D) #}
-        <div class="text-center p-2 mb-3" style="background: var(--color-teal-soft); border-radius: var(--radius-sm);">
-          <span class="text-sm">Interested in becoming a verified supplier?</span><br>
-          <a href="{{ url_for('register') }}" class="text-bold text-sm" style="color: var(--color-primary-dark); text-decoration: underline;">
-            Register as Vendor Partner →
-          </a>
-        </div>
-      </form>
-
-      {# ----- Quick Demo Access Helper ----- #}
-      <div class="demo-credentials-box">
-        <div class="demo-credentials-title">
-          <span>⚡ Demo Accounts (click to auto-fill)</span>
-        </div>
-        <div class="d-flex gap-1 flex-wrap mt-1">
-          <button type="button" class="demo-credential-chip"
-                  data-fill-email="admin@vendorbridge.com"
-                  data-fill-password="admin123"
-                  title="Click to populate Admin credentials">
-            <strong>Admin:</strong> admin@vendorbridge.com / admin123
-          </button>
-          <button type="button" class="demo-credential-chip"
-                  data-fill-email="vendor@apex.in"
-                  data-fill-password="vendor123"
-                  title="Click to populate Vendor credentials">
-            <strong>Vendor:</strong> vendor@apex.in / vendor123
-          </button>
-        </div>
+        <button type="button"
+                class="login-role-tab {% if active_role == 'admin' %}active{% endif %}"
+                id="tab-btn-admin"
+                data-role="admin"
+                role="tab"
+                aria-selected="{% if active_role == 'admin' %}true{% else %}false{% endif %}"
+                aria-controls="panel-admin-login">
+          <span class="clay-emoji clay-emoji-sm">🛡️</span>
+          <span>Admin Login</span>
+        </button>
       </div>
+
+      {# ----------------- 1. User / Vendor Login Panel ----------------- #}
+      <div id="panel-user-login" class="login-role-panel" style="{% if active_role == 'admin' %}display: none;{% endif %}">
+        <div class="login-role-header">
+          <span class="login-role-badge user-badge">
+            <span class="clay-emoji clay-emoji-sm" style="width: 18px; height: 18px; font-size: 0.75rem;">👤</span>
+            Vendor &amp; User Portal
+          </span>
+          <p class="text-sm text-muted mt-1">Sign in with your registered vendor or partner account</p>
+        </div>
+
+        <form method="POST" action="{{ url_for('login') }}" id="form-user-login" novalidate>
+          <input type="hidden" name="action" value="login">
+          <input type="hidden" name="login_type" value="user">
+
+          <div class="form-group">
+            <label for="user-email" class="form-label">
+              Email Address <span class="required">*</span>
+            </label>
+            <input
+              type="email"
+              id="user-email"
+              name="email"
+              class="form-input {% if form_errors is defined and form_errors.email and active_role != 'admin' %}error{% endif %}"
+              placeholder="vendor@company.com"
+              required
+              autocomplete="email"
+              value="{{ request.form.get('email', '') if (request is defined and active_role != 'admin') else '' }}"
+            >
+            {% if form_errors is defined and form_errors.email and active_role != 'admin' %}
+              <div class="form-error">{{ form_errors.email }}</div>
+            {% endif %}
+          </div>
+
+          <div class="form-group">
+            <label for="user-password" class="form-label">
+              Password <span class="required">*</span>
+            </label>
+            <div class="input-password-wrapper">
+              <input
+                type="password"
+                id="user-password"
+                name="password"
+                class="form-input {% if form_errors is defined and form_errors.password and active_role != 'admin' %}error{% endif %}"
+                placeholder="Enter your password"
+                required
+                autocomplete="current-password"
+              >
+              <button type="button" class="password-toggle" aria-label="Show password" title="Toggle password visibility">
+                <span class="clay-emoji clay-emoji-sm" style="margin: 0;">👁️</span>
+              </button>
+            </div>
+            {% if form_errors is defined and form_errors.password and active_role != 'admin' %}
+              <div class="form-error">{{ form_errors.password }}</div>
+            {% endif %}
+          </div>
+
+          <div class="login-footer-row">
+            <label class="form-checkbox">
+              <input type="checkbox" name="remember" value="1">
+              <span>Remember me</span>
+            </label>
+          </div>
+
+          <button type="submit" class="btn btn-primary clay-button btn-lg w-full mb-2" id="btn-user-submit">
+            Sign In as User
+          </button>
+
+          {# Option to Register under the user login #}
+          <div class="login-register-box">
+            <span class="text-sm text-muted">Don't have an account?</span>
+            <a href="{{ url_for('register') }}" class="register-link" id="link-to-register">
+              Register?
+            </a>
+          </div>
+        </form>
+      </div>
+
+      {# ----------------- 2. Admin Login Panel ----------------- #}
+      <div id="panel-admin-login" class="login-role-panel" style="{% if active_role != 'admin' %}display: none;{% endif %}">
+        <div class="login-role-header">
+          <span class="login-role-badge admin-badge">
+            <span class="clay-emoji clay-emoji-sm" style="width: 18px; height: 18px; font-size: 0.75rem;">🛡️</span>
+            Procurement Administration
+          </span>
+          <p class="text-sm text-muted mt-1">Sign in with authorized officer or administrator credentials</p>
+        </div>
+
+        <form method="POST" action="{{ url_for('login') }}" id="form-admin-login" novalidate>
+          <input type="hidden" name="action" value="login">
+          <input type="hidden" name="login_type" value="admin">
+
+          <div class="form-group">
+            <label for="admin-email" class="form-label">
+              Administrator Email <span class="required">*</span>
+            </label>
+            <input
+              type="email"
+              id="admin-email"
+              name="email"
+              class="form-input {% if form_errors is defined and form_errors.email and active_role == 'admin' %}error{% endif %}"
+              placeholder="admin@vendorbridge.com"
+              required
+              autocomplete="email"
+              value="{{ request.form.get('email', '') if (request is defined and active_role == 'admin') else '' }}"
+            >
+            {% if form_errors is defined and form_errors.email and active_role == 'admin' %}
+              <div class="form-error">{{ form_errors.email }}</div>
+            {% endif %}
+          </div>
+
+          <div class="form-group">
+            <label for="admin-password" class="form-label">
+              Password <span class="required">*</span>
+            </label>
+            <div class="input-password-wrapper">
+              <input
+                type="password"
+                id="admin-password"
+                name="password"
+                class="form-input {% if form_errors is defined and form_errors.password and active_role == 'admin' %}error{% endif %}"
+                placeholder="Enter administrative password"
+                required
+                autocomplete="current-password"
+              >
+              <button type="button" class="password-toggle" aria-label="Show password" title="Toggle password visibility">
+                <span class="clay-emoji clay-emoji-sm" style="margin: 0;">👁️</span>
+              </button>
+            </div>
+            {% if form_errors is defined and form_errors.password and active_role == 'admin' %}
+              <div class="form-error">{{ form_errors.password }}</div>
+            {% endif %}
+          </div>
+
+          <div class="login-footer-row">
+            <label class="form-checkbox">
+              <input type="checkbox" name="remember" value="1">
+              <span>Remember me</span>
+            </label>
+          </div>
+
+          <button type="submit" class="btn btn-primary clay-button btn-lg w-full mb-1" id="btn-admin-submit">
+            Sign In as Administrator
+          </button>
+        </form>
+      </div>
+
       {% endif %}
 
     </div>

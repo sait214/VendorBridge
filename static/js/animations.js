@@ -257,19 +257,69 @@
     }
   });
 
-  /* ----- Demo Credentials Quick-Fill ----- */
-  function initDemoCredentials() {
-    document.addEventListener('click', function (e) {
-      var chip = e.target.closest('[data-fill-email]');
-      if (chip) {
-        var email = chip.getAttribute('data-fill-email');
-        var pass = chip.getAttribute('data-fill-password');
-        var emailInput = document.getElementById('email');
-        var passInput = document.getElementById('password');
-        if (emailInput && email) emailInput.value = email;
-        if (passInput && pass) passInput.value = pass;
+  /* ----- Login Role Switcher (User vs Admin in Same Card) ----- */
+  function switchLoginRole(role) {
+    var userTab = document.getElementById('tab-btn-user');
+    var adminTab = document.getElementById('tab-btn-admin');
+    var userPanel = document.getElementById('panel-user-login');
+    var adminPanel = document.getElementById('panel-admin-login');
+
+    if (role === 'admin') {
+      if (userTab) {
+        userTab.classList.remove('active');
+        userTab.setAttribute('aria-selected', 'false');
       }
-    });
+      if (adminTab) {
+        adminTab.classList.add('active');
+        adminTab.setAttribute('aria-selected', 'true');
+      }
+      if (userPanel) userPanel.style.display = 'none';
+      if (adminPanel) {
+        adminPanel.style.display = 'block';
+        var adminEmail = document.getElementById('admin-email');
+        if (adminEmail && !adminEmail.value) adminEmail.focus();
+      }
+    } else {
+      if (adminTab) {
+        adminTab.classList.remove('active');
+        adminTab.setAttribute('aria-selected', 'false');
+      }
+      if (userTab) {
+        userTab.classList.add('active');
+        userTab.setAttribute('aria-selected', 'true');
+      }
+      if (adminPanel) adminPanel.style.display = 'none';
+      if (userPanel) {
+        userPanel.style.display = 'block';
+        var userEmail = document.getElementById('user-email');
+        if (userEmail && !userEmail.value) userEmail.focus();
+      }
+    }
+
+    try {
+      var url = new URL(window.location);
+      url.searchParams.set('role', role);
+      window.history.replaceState({}, '', url);
+    } catch (err) {}
+  }
+
+  window.switchLoginRole = switchLoginRole;
+
+  function initLoginRoleSwitch() {
+    var userTab = document.getElementById('tab-btn-user');
+    var adminTab = document.getElementById('tab-btn-admin');
+    if (userTab) {
+      userTab.addEventListener('click', function (e) {
+        e.preventDefault();
+        switchLoginRole('user');
+      });
+    }
+    if (adminTab) {
+      adminTab.addEventListener('click', function (e) {
+        e.preventDefault();
+        switchLoginRole('admin');
+      });
+    }
   }
 
   /* ----- Initialize All On DOMContentLoaded ----- */
@@ -279,7 +329,7 @@
     initPasswordToggles();
     initFlashMessages();
     initCounters();
-    initDemoCredentials();
+    initLoginRoleSwitch();
   });
 
 })();

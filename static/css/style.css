@@ -1757,42 +1757,200 @@ tbody tr:last-child td {
   margin-bottom: 22px;
 }
 
-/* Demo Credentials Hint Box */
-.demo-credentials-box {
-  background: var(--color-teal-soft);
-  border: 1px solid rgba(40, 92, 85, 0.2);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  margin-top: 24px;
-  font-size: 0.8rem;
+/* Role Selector Switch (User vs Admin Login in Same Card) */
+.login-role-tabs {
+  display: flex;
+  background: var(--bg-main);
+  border-radius: var(--radius);
+  padding: 4px;
+  box-shadow: var(--shadow-clay-inset);
+  border: 1px solid var(--color-border);
+  gap: 6px;
+  margin-bottom: 22px;
 }
 
-.demo-credentials-title {
-  font-weight: 700;
-  color: var(--color-primary);
-  margin-bottom: 6px;
+.login-role-tab {
+  flex: 1;
   display: flex;
   align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all var(--transition);
+  user-select: none;
+}
+
+.login-role-tab:hover {
+  color: var(--color-text);
+}
+
+.login-role-tab.active {
+  background: var(--bg-surface);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-clay-soft);
+  border: 1px solid rgba(226, 224, 216, 0.9);
+}
+
+.login-role-header {
+  margin-bottom: 18px;
+}
+
+.login-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.login-role-badge.user-badge {
+  background: var(--color-teal-soft);
+  color: var(--color-primary-dark);
+  border: 1px solid rgba(40, 92, 85, 0.25);
+  box-shadow: var(--shadow-clay-soft);
+}
+
+.login-role-badge.admin-badge {
+  background: var(--color-terracotta-soft);
+  color: var(--color-terracotta-hover);
+  border: 1px solid rgba(196, 125, 99, 0.3);
+  box-shadow: var(--shadow-clay-soft);
+}
+
+/* User Registration Prompt under User Login */
+.login-register-box {
+  margin-top: 14px;
+  padding: 11px 14px;
+  text-align: center;
+  background: var(--bg-surface-raised);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-clay-soft);
+  font-size: 0.85rem;
+}
+
+.login-register-box a {
+  color: var(--color-primary);
+  font-weight: 700;
+  text-decoration: underline;
+  transition: color var(--transition);
+}
+
+.login-register-box a:hover {
+  color: var(--color-primary-light);
+}
+
+/* ============================================================
+   CLAY-LIKE EMOJIS & ICON STYLING
+   Tactile, extruded, embossed clay pebble & pill containers
+   ============================================================ */
+
+.clay-emoji,
+.clay-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #FAF8F5, #ECE7DE);
+  box-shadow: 2px 2px 5px rgba(65, 69, 61, 0.12),
+              -2px -2px 5px rgba(255, 255, 255, 0.95),
+              inset 1px 1px 1.5px rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(226, 224, 216, 0.9);
+  font-style: normal;
+  font-size: 0.95rem;
+  line-height: 1;
+  vertical-align: middle;
+  flex-shrink: 0;
+  user-select: none;
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.clay-emoji:hover,
+.clay-icon-badge:hover {
+  transform: translateY(-1.5px) scale(1.05);
+  box-shadow: 3px 3px 7px rgba(65, 69, 61, 0.16),
+              -2px -2px 6px rgba(255, 255, 255, 1);
+}
+
+.clay-emoji:active,
+.clay-icon-badge:active {
+  transform: translateY(1px) scale(0.97);
+  box-shadow: inset 2px 2px 4px rgba(65, 69, 61, 0.15),
+              inset -2px -2px 4px rgba(255, 255, 255, 0.85);
+}
+
+.clay-emoji-sm {
+  width: 22px;
+  height: 22px;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  box-shadow: 1.5px 1.5px 3.5px rgba(65, 69, 61, 0.10),
+              -1.5px -1.5px 3.5px rgba(255, 255, 255, 0.95);
+}
+
+.clay-emoji-lg {
+  width: 44px;
+  height: 44px;
+  font-size: 1.45rem;
+  border-radius: var(--radius);
+  box-shadow: 4px 4px 9px rgba(65, 69, 61, 0.12),
+              -3px -3px 8px rgba(255, 255, 255, 0.95),
+              inset 1px 1px 2px rgba(255, 255, 255, 0.8);
+}
+
+.clay-emoji-xl {
+  width: 58px;
+  height: 58px;
+  font-size: 1.85rem;
+  border-radius: var(--radius);
+  box-shadow: 6px 6px 14px rgba(65, 69, 61, 0.14),
+              -5px -5px 12px rgba(255, 255, 255, 0.95),
+              inset 2px 2px 3px rgba(255, 255, 255, 0.85);
+}
+
+.clay-emoji-circle {
+  border-radius: 50% !important;
+}
+
+.clay-emoji-pill {
+  width: auto;
+  min-height: 28px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
   gap: 6px;
 }
 
-.demo-credential-chip {
-  display: inline-block;
-  background: var(--bg-surface);
-  border: 1px solid var(--color-border);
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  font-family: monospace;
-  font-size: 0.78rem;
-  margin: 2px 0;
-  cursor: pointer;
-  box-shadow: var(--shadow-clay-soft);
-  transition: background var(--transition);
+/* Empty State Icons with tactile clay styling */
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
 }
 
-.demo-credential-chip:hover {
-  background: var(--color-white);
-  border-color: var(--color-primary);
+.empty-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, #FAF8F5, #ECE7DE);
+  box-shadow: var(--shadow-clay);
+  border: 1px solid var(--color-border);
+  font-size: 2rem;
+  margin-bottom: 16px;
 }
 
 /* ============================================================
