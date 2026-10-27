@@ -432,86 +432,6 @@
     </div>
   </div>
 
-  {# ----- Details Sidebar (Slides in on Dot / Row Click) ----- #}
-  <aside class="audit-sidebar" id="audit-sidebar" aria-hidden="true" role="dialog" aria-label="Audit Event Details">
-    <div class="audit-sidebar-header">
-      <div class="d-flex align-center gap-1">
-        <span class="badge badge-approved" id="sidebar-action-badge">Audit Event</span>
-        <span class="text-xs text-muted" id="sidebar-audit-id">#--</span>
-      </div>
-      <button type="button" class="audit-sidebar-close" id="audit-sidebar-close" aria-label="Close sidebar details">&times;</button>
-    </div>
-
-    <div class="audit-sidebar-body">
-      <div class="audit-sidebar-title-row mb-2">
-        <h3 id="sidebar-action-title" style="margin-bottom: 2px;">Event Action</h3>
-        <div class="text-xs text-muted font-mono" id="sidebar-timestamp">Timestamp</div>
-      </div>
-
-      {# Actor Details #}
-      <div class="audit-detail-section mb-3">
-        <div class="section-label">Actor &amp; Organization</div>
-        <div class="d-flex align-center gap-2 mt-1 p-2 clay-panel" style="background: var(--bg-surface-raised);">
-          <div class="sidebar-avatar" id="sidebar-actor-avatar" style="width: 38px; height: 38px; font-size: 0.85rem; background: var(--color-teal-soft); color: var(--color-primary); flex-shrink: 0;">
-            U
-          </div>
-          <div>
-            <div class="text-bold" id="sidebar-actor-name">User Name</div>
-            <div class="text-xs text-muted" id="sidebar-actor-role-org">Role • Organization</div>
-          </div>
-        </div>
-      </div>
-
-      {# Target Record / Entity #}
-      <div class="audit-detail-section mb-3">
-        <div class="section-label">Target Entity / Record</div>
-        <div class="d-flex align-center gap-1 mt-1">
-          <span class="badge badge-secondary" id="sidebar-record-type">Entity</span>
-          <span class="text-sm font-mono text-bold" id="sidebar-record-id">Record #--</span>
-        </div>
-      </div>
-
-      {# Activity Description #}
-      <div class="audit-detail-section mb-3">
-        <div class="section-label">Activity Description</div>
-        <div class="clay-panel p-2 mt-1 text-sm" id="sidebar-description" style="line-height: 1.5; background: var(--bg-surface-raised);">
-          Activity description details
-        </div>
-      </div>
-
-      {# State Transition / Previous vs New Values #}
-      <div class="audit-detail-section mb-3" id="sidebar-transition-section">
-        <div class="section-label">State Transition / Values</div>
-        <div class="state-transition-box mt-1" id="sidebar-transition-box">
-          <div class="state-pill state-prev" id="sidebar-prev-val">Previous: —</div>
-          <div class="state-arrow">→</div>
-          <div class="state-pill state-new" id="sidebar-new-val">New: —</div>
-        </div>
-      </div>
-
-      {# Evidence & Related Document Attachments #}
-      <div class="audit-detail-section mb-3" id="sidebar-evidence-section">
-        <div class="section-label">Evidence &amp; Document Artifacts</div>
-        <div class="mt-1" id="sidebar-evidence-container">
-          <!-- Populated dynamically if applicable -->
-        </div>
-      </div>
-
-      {# Immutable Integrity Stamp #}
-      <div class="audit-compliance-stamp mt-3 p-2 clay-panel" style="background: var(--bg-surface-raised); border-left: 3px solid var(--color-green);">
-        <div class="d-flex align-center gap-1 text-xs" style="color: var(--color-text-secondary);">
-          <span style="font-size: 1rem;">🔒</span>
-          <div>
-            <strong>Immutable Audit Record:</strong> Chronologically indexed in SQLite ledger. Tamper-evident and non-repudiable.
-          </div>
-        </div>
-      </div>
-    </div>
-  </aside>
-
-  {# Sidebar Overlay / Backdrop (Mobile & Focus Trap) #}
-  <div class="audit-sidebar-backdrop" id="audit-sidebar-backdrop"></div>
-
   {# JSON Data Store for Zero-Latency Client Interaction #}
   <script type="application/json" id="audit-logs-json">
     {{ audit_logs|tojson|safe }}
@@ -520,6 +440,90 @@
 {% endif %}
 
 </div>{# / finance-panels #}
+
+{# ================================================================
+   AUDIT DETAILS SIDEBAR & BACKDROP (OUTSIDE SCROLLABLE TAB PANELS)
+   ================================================================ #}
+{% if current_user is defined and current_user.role == 'admin' %}
+<aside class="audit-sidebar" id="audit-sidebar" aria-hidden="true" role="dialog" aria-label="Audit Event Details">
+  <div class="audit-sidebar-header">
+    <div class="d-flex align-center gap-1">
+      <span class="badge badge-approved" id="sidebar-action-badge">Audit Event</span>
+      <span class="text-xs text-muted" id="sidebar-audit-id">#--</span>
+    </div>
+    <button type="button" class="audit-sidebar-close" id="audit-sidebar-close" aria-label="Close sidebar details">&times;</button>
+  </div>
+
+  <div class="audit-sidebar-body">
+    <div class="audit-sidebar-title-row mb-2">
+      <h3 id="sidebar-action-title" style="margin-bottom: 2px;">Event Action</h3>
+      <div class="text-xs text-muted font-mono" id="sidebar-timestamp">Timestamp</div>
+    </div>
+
+    {# Actor Details #}
+    <div class="audit-detail-section mb-3">
+      <div class="section-label">Actor &amp; Organization</div>
+      <div class="d-flex align-center gap-2 mt-1 p-2 clay-panel" style="background: var(--bg-surface-raised);">
+        <div class="sidebar-avatar" id="sidebar-actor-avatar" style="width: 38px; height: 38px; font-size: 0.85rem; background: var(--color-teal-soft); color: var(--color-primary); flex-shrink: 0;">
+          U
+        </div>
+        <div>
+          <div class="text-bold" id="sidebar-actor-name">User Name</div>
+          <div class="text-xs text-muted" id="sidebar-actor-role-org">Role • Organization</div>
+        </div>
+      </div>
+    </div>
+
+    {# Target Record / Entity #}
+    <div class="audit-detail-section mb-3">
+      <div class="section-label">Target Entity / Record</div>
+      <div class="d-flex align-center gap-1 mt-1">
+        <span class="badge badge-secondary" id="sidebar-record-type">Entity</span>
+        <span class="text-sm font-mono text-bold" id="sidebar-record-id">Record #--</span>
+      </div>
+    </div>
+
+    {# Activity Description #}
+    <div class="audit-detail-section mb-3">
+      <div class="section-label">Activity Description</div>
+      <div class="clay-panel p-2 mt-1 text-sm" id="sidebar-description" style="line-height: 1.5; background: var(--bg-surface-raised);">
+        Activity description details
+      </div>
+    </div>
+
+    {# State Transition / Previous vs New Values #}
+    <div class="audit-detail-section mb-3" id="sidebar-transition-section">
+      <div class="section-label">State Transition / Values</div>
+      <div class="state-transition-box mt-1" id="sidebar-transition-box">
+        <div class="state-pill state-prev" id="sidebar-prev-val">Previous: —</div>
+        <div class="state-arrow">→</div>
+        <div class="state-pill state-new" id="sidebar-new-val">New: —</div>
+      </div>
+    </div>
+
+    {# Evidence & Related Document Attachments #}
+    <div class="audit-detail-section mb-3" id="sidebar-evidence-section">
+      <div class="section-label">Evidence &amp; Document Artifacts</div>
+      <div class="mt-1" id="sidebar-evidence-container">
+        <!-- Populated dynamically if applicable -->
+      </div>
+    </div>
+
+    {# Immutable Integrity Stamp #}
+    <div class="audit-compliance-stamp mt-3 p-2 clay-panel" style="background: var(--bg-surface-raised); border-left: 3px solid var(--color-green);">
+      <div class="d-flex align-center gap-1 text-xs" style="color: var(--color-text-secondary);">
+        <span style="font-size: 1rem;"></span>
+        <div>
+          <strong>Immutable Audit Record:</strong> Chronologically indexed in SQLite ledger. Tamper-evident and non-repudiable.
+        </div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+{# Sidebar Overlay / Backdrop (Mobile & Focus Trap) #}
+<div class="audit-sidebar-backdrop" id="audit-sidebar-backdrop"></div>
+{% endif %}
 
 {# ================================================================
    MODAL DIALOGS (CLEANLY LOCATED OUTSIDE TABLES)
