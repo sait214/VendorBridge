@@ -163,14 +163,32 @@ CREATE TABLE IF NOT EXISTS invoices (
     FOREIGN KEY (verified_by) REFERENCES users(id) ON DELETE RESTRICT
 );
 
+CREATE TABLE IF NOT EXISTS audits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    audit_reference TEXT NOT NULL UNIQUE,
+    company_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    category TEXT DEFAULT 'Compliance',
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'completed', 'flagged', 'in_progress')),
+    lead_auditor TEXT,
+    audit_date TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (company_id) REFERENCES vendors(id) ON DELETE RESTRICT
+);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    audit_id INTEGER,
     actor_user_id INTEGER,
     action TEXT NOT NULL,
     entity_type TEXT NOT NULL,
     entity_id INTEGER,
     details_json TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (audit_id) REFERENCES audits(id) ON DELETE RESTRICT,
     FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE RESTRICT
 );
 
@@ -188,6 +206,12 @@ CREATE INDEX IF NOT EXISTS idx_purchase_orders_vendor
     ON purchase_orders(vendor_id, status);
 CREATE INDEX IF NOT EXISTS idx_invoices_po
     ON invoices(po_id, status);
+CREATE INDEX IF NOT EXISTS idx_audits_company
+    ON audits(company_id);
+CREATE INDEX IF NOT EXISTS idx_audits_status
+    ON audits(status);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_audit_id
+    ON audit_logs(audit_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity
     ON audit_logs(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created
@@ -445,6 +469,136 @@ def seed_demo_data(conn: sqlite3.Connection) -> None:
                 ),
             ),
         )
+
+    # Seed multi-company independent audits and events
+    seed_company_audits(conn, admin_id)
+
+
+def seed_company_audits(conn: sqlite3.Connection, admin_id: int) -> None:
+    """Seeds multi-company independent compliance audits and chronological event histories."""
+    # 1. XYZ Company
+    xyz_user_id = ensure_user(
+        conn,
+        full_name="David Vance",
+        email="compliance@xyzcompany.com",
+        password=os.environ.get("VENDORBRIDGE_XYZ_PASSWORD", "VendorDemo!2026"),
+        role="vendor",
+    )
+    xyz_row = conn.execute("SELECT id FROM vendors WHERE user_id = ? OR company_name = 'XYZ Company'", (xyz_user_id,)).fetchone()
+    if xyz_row:
+        xyz_cid = int(xyz_row["id"])
+    else:
+        cur = conn.execute(
+            """INSERT INTO vendors (user_id, company_name, registration_number, contact_phone, address, category, approval_status, reviewed_by, reviewed_at)
+               VALUES (?, 'XYZ Company', 'REG-XYZ-001', '+91 91234 56780', 'Plot 42, Heavy Industrial Estate, Pune, Maharashtra', 'Industrial Manufacturing', 'approved', ?, CURRENT_TIMESTAMP)""",
+            (xyz_user_id, admin_id)
+        )
+        xyz_cid = int(cur.lastrowid)
+
+    # 2. ABC Company
+    abc_user_id = ensure_user(
+        conn,
+        full_name="Ananya Sengupta",
+        email="safety@abccompany.com",
+        password=os.environ.get("VENDORBRIDGE_ABC_PASSWORD", "VendorDemo!2026"),
+        role="vendor",
+    )
+    abc_row = conn.execute("SELECT id FROM vendors WHERE user_id = ? OR company_name = 'ABC Company'", (abc_user_id,)).fetchone()
+    if abc_row:
+        abc_cid = int(abc_row["id"])
+    else:
+        cur = conn.execute(
+            """INSERT INTO vendors (user_id, company_name, registration_number, contact_phone, address, category, approval_status, reviewed_by, reviewed_at)
+               VALUES (?, 'ABC Company', 'REG-ABC-001', '+91 92345 67890', 'Mining Corridor Zone 3, Dhanbad, Jharkhand', 'Mining Operations', 'approved', ?, CURRENT_TIMESTAMP)""",
+            (abc_user_id, admin_id)
+        )
+        abc_cid = int(cur.lastrowid)
+
+    # Helper to insert audit
+    def _add_audit(comp_id, ref, title, desc, cat, status, auditor, date):
+        row = conn.execute("SELECT id FROM audits WHERE audit_reference = ?", (ref,)).fetchone()
+        if row:
+            return int(row["id"])
+        c = conn.execute(
+            """INSERT INTO audits (audit_reference, company_id, title, description, category, status, lead_auditor, audit_date)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (ref, comp_id, title, desc, cat, status, auditor, date)
+        )
+        return int(c.lastrowid)
+
+    def _add_event(audit_id, actor_id, action, ent_type, ent_id, msg, dt, prev=None, new=None):
+        existing = conn.execute(
+            "SELECT id FROM audit_logs WHERE audit_id = ? AND action = ? AND created_at = ?",
+            (audit_id, action, dt)
+        ).fetchone()
+        if not existing:
+            details = {"message": msg}
+            if prev: details["previous_value"] = prev
+            if new: details["new_value"] = new
+            conn.execute(
+                """INSERT INTO audit_logs (audit_id, actor_user_id, action, entity_type, entity_id, details_json, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (audit_id, actor_id, action, ent_type, ent_id, json.dumps(details), dt)
+            )
+
+    # Audits for XYZ Company
+    a1 = _add_audit(xyz_cid, "AUD-XYZ-001", "PPE Non-compliance",
+                    "Specialized safety inspection verifying Personal Protective Equipment protocols across fabrication zones.",
+                    "Safety Inspection", "flagged", "Priya Sharma (Chief Compliance Officer)", "2026-10-20")
+    _add_event(a1, admin_id, "INSPECTION_INITIATED", "SafetyProtocol", 101, "Site safety walkthrough commenced in Zone B cutting and welding bays.", "2026-10-20 09:30:00")
+    _add_event(a1, admin_id, "NON_COMPLIANCE_FLAGGED", "SafetyProtocol", 102, "Non-compliant eye protection and unshielded grinding wheels detected.", "2026-10-20 10:45:00", "Compliant", "Flagged Non-compliant")
+    _add_event(a1, admin_id, "SAFETY_VIOLATION_CITED", "SafetyViolation", 103, "High-visibility vest deficiency cited under Site Safety Standard Rule 14-B.", "2026-10-20 11:15:00")
+    _add_event(a1, admin_id, "CONTRACTOR_NOTIFIED", "VendorNotice", 104, "Formal corrective remediation order served to XYZ site engineering lead.", "2026-10-20 13:00:00")
+    _add_event(a1, admin_id, "CORRECTIVE_GEAR_ISSUED", "EquipmentDistribution", 105, "50 units of EN166-certified safety goggles and Level 3 reflective vests issued.", "2026-10-21 08:30:00", "Pending Action", "Remediated")
+    _add_event(a1, admin_id, "REINSPECTION_VERIFIED", "SafetyClearance", 106, "Follow-up audit walkthrough confirmed 100% PPE compliance across all staff.", "2026-10-22 14:00:00", "Remediated", "Resolved & Closed")
+
+    a2 = _add_audit(xyz_cid, "AUD-XYZ-002", "Safety Inspection",
+                    "Quarterly comprehensive hazard review, chemical containment, and emergency response inspection.",
+                    "Facility Safety", "completed", "Vikram Patel (Senior Safety Lead)", "2026-10-22")
+    _add_event(a2, admin_id, "AUDIT_SCHEDULED", "FacilityAudit", 201, "Q4 scheduled facility hazard assessment formally registered in compliance log.", "2026-10-22 09:00:00")
+    _add_event(a2, admin_id, "HAZARD_ASSESSMENT_COMPLETED", "HazardReview", 202, "Flammable solvent storage containment and ventilation barriers examined.", "2026-10-22 11:30:00")
+    _add_event(a2, admin_id, "FIRE_SYSTEMS_INSPECTED", "FireSafety", 203, "Hydrant pressure tested at 6.8 bar; automated sprinkler arrays validated.", "2026-10-22 14:15:00")
+    _add_event(a2, admin_id, "SAFETY_CLEARANCE_ISSUED", "ComplianceCertificate", 204, "Quarterly site safety clearance officially authorized and stamped.", "2026-10-22 16:45:00", "Under Review", "Certified Compliant")
+
+    a3 = _add_audit(xyz_cid, "AUD-XYZ-003", "Equipment Compliance",
+                    "Heavy machinery calibration review, pressure sensor validation, and maintenance compliance audit.",
+                    "Equipment Compliance", "in_progress", "Sunil Rao (Technical Auditor)", "2026-10-24")
+    _add_event(a3, admin_id, "EQUIPMENT_AUDIT_OPENED", "MachineryAudit", 301, "Annual heavy hoist and hydraulic press inspection initiated.", "2026-10-24 10:00:00")
+    _add_event(a3, admin_id, "SENSOR_CALIBRATION_TESTED", "SensorArray", 302, "Telemetry pressure transducers verified against ISO 9001 reference gauges.", "2026-10-24 12:30:00")
+    _add_event(a3, admin_id, "MAINTENANCE_LOG_REVIEWED", "MaintenanceLog", 303, "500-hour preventive maintenance logs verified up to current shift.", "2026-10-24 15:00:00")
+
+    # Audits for ABC Company
+    b1 = _add_audit(abc_cid, "AUD-ABC-001", "Ventilation Inspection",
+                    "Sub-surface airflow velocity measurement, hazardous gas sensor calibration, and auxiliary fan efficiency.",
+                    "Ventilation & Air Quality", "completed", "Priya Sharma (Chief Compliance Officer)", "2026-10-21")
+    _add_event(b1, admin_id, "VENTILATION_AUDIT_INITIATED", "MineVentilation", 401, "Airflow monitoring protocol initiated at North Shaft intake.", "2026-10-21 08:00:00")
+    _add_event(b1, admin_id, "AIRFLOW_TEST_COMPLETED", "AirflowMeasurement", 402, "Intake air velocity measured at 4.6 m/s, meeting statutory mining code.", "2026-10-21 10:30:00")
+    _add_event(b1, admin_id, "GAS_SENSORS_CALIBRATED", "GasDetectorArray", 403, "Methane (CH4) and carbon monoxide (CO) sensor array calibrated.", "2026-10-21 13:00:00")
+    _add_event(b1, admin_id, "FILTER_REPLACEMENT_MANDATED", "FilterBank", 404, "High-efficiency particulate air intake filter bank scheduled for replacement.", "2026-10-21 15:15:00")
+    _add_event(b1, admin_id, "VENTILATION_CERTIFIED", "MineAirCertificate", 405, "Statutory sub-surface ventilation safety certificate issued and logged.", "2026-10-21 17:00:00", "Pending Inspection", "Certified Safe")
+
+    b2 = _add_audit(abc_cid, "AUD-ABC-002", "Regulatory Compliance",
+                    "Annual statutory environmental discharge audit, labor welfare adherence, and legal compliance verification.",
+                    "Regulatory Compliance", "active", "Rajesh Kulkarni (Statutory Auditor)", "2026-10-25")
+    _add_event(b2, admin_id, "REGULATORY_REVIEW_OPENED", "StatutoryFiling", 501, "Annual statutory regulatory compliance audit opened for FY2026.", "2026-10-25 09:15:00")
+    _add_event(b2, admin_id, "DISCHARGE_PERMIT_REVIEW", "EnvironmentalPermit", 502, "Effluent treatment water quality and soil run-off testing reports verified.", "2026-10-25 11:45:00")
+    _add_event(b2, admin_id, "MANDATORY_FILING_COMPLETED", "DirectorateFiling", 503, "Statutory compliance documentation validated and certified for regulatory submission.", "2026-10-25 14:30:00", "Submitted", "Approved")
+
+    # Link existing audits for Aarav Office Supplies
+    aarav_row = conn.execute("SELECT id FROM vendors WHERE company_name LIKE '%Aarav%'").fetchone()
+    if aarav_row:
+        aarav_aid = _add_audit(aarav_row["id"], "AUD-AARAV-001", "Procurement & Commercial Accounting Audit",
+                               "Audit of purchase order fulfillment, tax invoice verification, and payment settlement records.",
+                               "Commercial & Accounting", "completed", "Priya Sharma (Internal Audit)", "2026-10-26")
+        conn.execute("UPDATE audit_logs SET audit_id = ? WHERE audit_id IS NULL AND (details_json LIKE '%Aarav%' OR details_json LIKE '%PO-2026-DEMO%')", (aarav_aid,))
+
+    # Link existing audits for Apex Office Solutions
+    apex_row = conn.execute("SELECT id FROM vendors WHERE company_name LIKE '%Apex%'").fetchone()
+    if apex_row:
+        apex_aid = _add_audit(apex_row["id"], "AUD-APEX-001", "Supplier Quality & Commercial Audit",
+                              "Supplier vendor registration approval and commercial bidding verification.",
+                              "Supplier Governance", "completed", "VendorBridge Audit Committee", "2026-10-26")
+        conn.execute("UPDATE audit_logs SET audit_id = ? WHERE audit_id IS NULL AND details_json LIKE '%Apex%'", (apex_aid,))
 
 
 def main() -> None:

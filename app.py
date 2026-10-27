@@ -620,7 +620,40 @@ def finance():
     invoices = db.get_invoices(user=user, verification_status=v_status, payment_status=p_status, search=q)
     payments = db.get_payment_records(user=user)
     orders = db.get_purchase_orders(user=user)
-    audit_records = db.get_audit_logs(limit=50, search=audit_q if audit_q else None) if not is_vendor else []
+    # ── Company-Wise Multiple Audit System (Inside existing Audit Trail tab) ──
+    audit_companies = []
+    selected_company = None
+    company_audits = []
+    selected_audit = None
+    audit_records = []
+
+    if not is_vendor and active_tab == 'audit':
+        audit_companies = db.get_companies_with_audit_counts(user=user)
+        cos_with_audits = [c for c in audit_companies if c.get('total_audits', 0) > 0]
+        co_pool = cos_with_audits if cos_with_audits else audit_companies
+
+        req_company_id = request.args.get('company_id', type=int)
+        if req_company_id:
+            selected_company = db.get_company_by_id(req_company_id)
+        if not selected_company and co_pool:
+            selected_company = co_pool[0]
+
+        if selected_company:
+            company_audits = db.get_audits_for_company(selected_company['id'], user=user)
+            req_audit_id = request.args.get('audit_id', type=int)
+            if req_audit_id:
+                selected_audit = db.get_audit_by_id(req_audit_id, company_id=selected_company['id'])
+            if not selected_audit and company_audits:
+                selected_audit = company_audits[0]
+
+            if selected_audit:
+                audit_records = db.get_audit_logs_for_audit(selected_audit['id'], search=audit_q if audit_q else None)
+            else:
+                audit_records = []
+        else:
+            audit_records = db.get_audit_logs(limit=50, search=audit_q if audit_q else None)
+    elif not is_vendor:
+        audit_records = db.get_audit_logs(limit=50, search=audit_q if audit_q else None)
 
     return render_template('finance.html',
         active_page='finance',
@@ -635,6 +668,10 @@ def finance():
         invoices=invoices,
         payment_records=payments,
         audit_logs=audit_records,
+        audit_companies=audit_companies,
+        selected_company=selected_company,
+        company_audits=company_audits,
+        selected_audit=selected_audit,
         purchase_orders=orders,
         approved_vendors=db.get_vendors(status='approved') if not is_vendor else [],
         **get_nav_badges(user),
@@ -780,6 +817,7 @@ def check_vendor_record_access(user: dict, record_vendor_id: Optional[int], reco
 
 
 @app.route('/procurement/order/<int:po_id>/pdf')
+@app.route('/procurement/po/<int:po_id>/pdf')
 def download_po_pdf(po_id):
     """
     Downloads an official Purchase Order PDF.

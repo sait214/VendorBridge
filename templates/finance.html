@@ -293,6 +293,118 @@
 {% if current_user is defined and current_user.role == 'admin' %}
 <div class="tab-panel {% if active_tab == 'audit' %}active{% endif %}" id="audit" role="tabpanel">
 
+  {# ----- 1. Company Selection Control ----- #}
+  {% if audit_companies is defined and audit_companies %}
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-between align-center flex-wrap gap-2">
+      <div>
+        <h3 style="margin: 0;">Company Audit Ledgers</h3>
+        <span class="text-xs text-muted">Select a company to inspect its independent audits and chronological event histories</span>
+      </div>
+      <form method="GET" action="{{ url_for('finance') }}" class="d-flex gap-1 align-center">
+        <input type="hidden" name="tab" value="audit">
+        <select name="company_id" class="form-select" onchange="this.form.submit()" style="font-weight: 600; min-width: 220px;" aria-label="Select Company">
+          {% for co in audit_companies %}
+            {% if co.total_audits > 0 or (selected_company and selected_company.id == co.id) %}
+            <option value="{{ co.id }}" {% if selected_company and selected_company.id == co.id %}selected{% endif %}>
+              {{ co.company_name }} ({{ co.total_audits }} Audits)
+            </option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+
+    {# Interactive Company Selector Buttons / Pills #}
+    <div class="card-body p-2" style="background: var(--bg-surface-raised); border-top: 1px solid var(--color-border);">
+      <div class="d-flex gap-1 flex-wrap align-center">
+        <span class="text-xs text-muted" style="margin-right: 4px; font-weight: 600;">Select Company:</span>
+        {% for co in audit_companies %}
+          {% if co.total_audits > 0 %}
+          <a href="{{ url_for('finance') }}?tab=audit&company_id={{ co.id }}"
+             class="btn btn-sm {% if selected_company and selected_company.id == co.id %}btn-primary{% else %}btn-secondary{% endif %}"
+             style="border-radius: var(--radius-pill); font-size: 0.82rem; padding: 4px 12px;">
+            <span>{{ co.company_name }}</span>
+            <span class="badge {% if selected_company and selected_company.id == co.id %}badge-approved{% else %}badge-secondary{% endif %} text-xs" style="margin-left: 4px; padding: 1px 6px;">
+              {{ co.total_audits }}
+            </span>
+          </a>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ----- 2. Selected Company's Audits Filter Card ----- #}
+  {% if selected_company and company_audits %}
+  <div class="card mb-3" style="border-left: 4px solid var(--color-primary);">
+    <div class="card-body p-3">
+      <div class="d-flex justify-between align-center flex-wrap gap-2 mb-2">
+        <div>
+          <div class="d-flex align-center gap-1">
+            <h4 style="margin: 0; font-size: 1.15rem; color: var(--color-text);">
+              {{ selected_company.company_name }} — Audits
+            </h4>
+            <span class="badge badge-approved text-xs">{{ company_audits|length }} Audits</span>
+          </div>
+          <div class="text-xs text-muted mt-0">
+            Industry / Category: <strong>{{ selected_company.category|default('General Supplier') }}</strong> •
+            Registration / Tax ID: <span class="font-mono">{{ selected_company.registration_number|default('—') }}</span>
+          </div>
+        </div>
+      </div>
+
+      {# Audit Cards / Selector Pills #}
+      <div class="d-flex gap-2 flex-wrap">
+        {% for a in company_audits %}
+        <a href="{{ url_for('finance') }}?tab=audit&company_id={{ selected_company.id }}&audit_id={{ a.id }}"
+           class="clay-panel p-2 d-flex flex-column gap-1"
+           style="text-decoration: none; min-width: 220px; flex: 1; border-radius: var(--radius-sm); border: 2px solid {% if selected_audit and selected_audit.id == a.id %}var(--color-primary){% else %}var(--color-border){% endif %}; background: {% if selected_audit and selected_audit.id == a.id %}var(--color-teal-soft){% else %}var(--bg-surface){% endif %}; transition: all 0.2s ease;">
+          <div class="d-flex justify-between align-center">
+            <span class="badge badge-secondary font-mono text-xs" style="font-weight: 700;">{{ a.audit_reference }}</span>
+            <span class="badge {% if a.status == 'completed' %}badge-approved{% elif a.status == 'flagged' %}badge-pending{% else %}badge-active{% endif %} text-xs">
+              {{ a.status|replace('_', ' ')|title }}
+            </span>
+          </div>
+          <div class="text-bold text-sm" style="color: var(--color-text);">{{ a.title }}</div>
+          <div class="d-flex justify-between align-center text-xs text-muted">
+            <span>{{ a.category }}</span>
+            <span class="badge badge-approved text-xs">{{ a.events_count }} Events</span>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ----- 3. Selected Audit Prominent Header & Metadata ----- #}
+  {% if selected_company and selected_audit %}
+  <div class="clay-panel p-3 mb-3 d-flex justify-between align-center flex-wrap gap-2" style="background: var(--bg-surface); border-left: 4px solid var(--color-primary);">
+    <div>
+      <h3 style="margin: 0; font-size: 1.35rem; color: var(--color-text);">
+        {{ selected_company.company_name }} — Audit Trail
+      </h3>
+      <div class="text-sm mt-1" style="color: var(--color-primary); font-weight: 600;">
+        Audit: {{ selected_audit.title }} — {{ selected_audit.audit_reference }}
+        <span class="badge badge-secondary text-xs" style="margin-left: 6px;">{{ selected_audit.category }}</span>
+        <span class="badge {% if selected_audit.status == 'completed' %}badge-approved{% elif selected_audit.status == 'flagged' %}badge-pending{% else %}badge-active{% endif %} text-xs">
+          {{ selected_audit.status|replace('_', ' ')|title }}
+        </span>
+      </div>
+      <div class="text-xs text-muted mt-1" style="max-width: 650px; line-height: 1.4;">
+        {{ selected_audit.description|default('Audit inspection trail tracking compliance and remediation events.') }}
+      </div>
+    </div>
+    <div class="text-xs text-muted text-right">
+      <div>Lead Auditor: <strong>{{ selected_audit.lead_auditor|default('Senior Lead Auditor') }}</strong></div>
+      <div>Audit Date: <span class="font-mono">{{ selected_audit.audit_date|default('—') }}</span></div>
+      <div>Ledger Events: <span class="badge badge-approved text-xs">{{ audit_logs|length }} Events</span></div>
+    </div>
+  </div>
+  {% endif %}
+
   {# ----- Interactive Horizontal Audit Timeline ----- #}
   <div class="card mb-3">
     <div class="card-header d-flex justify-between align-center flex-wrap gap-1">
@@ -301,7 +413,9 @@
           <span>Interactive Audit Timeline</span>
           <span class="badge badge-approved text-xs">{{ audit_logs|length }} Events</span>
         </h3>
-        <p class="text-xs text-muted mt-0">Chronological event flow. Click any timeline dot to inspect full event metadata.</p>
+        <p class="text-xs text-muted mt-0">
+          Chronological events for {{ selected_company.company_name if selected_company else '' }} — {{ selected_audit.audit_reference if selected_audit else 'Audit Trail' }}. Click any timeline dot to inspect full event metadata.
+        </p>
       </div>
 
       <div class="d-flex align-center gap-1">
@@ -311,11 +425,13 @@
         </div>
         <form method="GET" action="{{ url_for('finance') }}" class="d-flex gap-1 align-center">
           <input type="hidden" name="tab" value="audit">
+          {% if selected_company %}<input type="hidden" name="company_id" value="{{ selected_company.id }}">{% endif %}
+          {% if selected_audit %}<input type="hidden" name="audit_id" value="{{ selected_audit.id }}">{% endif %}
           <input type="search" name="audit_q" class="form-input" placeholder="Search audit trail…"
                  value="{{ request.args.get('audit_q', '') }}" style="width: 200px;">
           <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
           {% if request.args.get('audit_q') %}
-            <a href="{{ url_for('finance') }}?tab=audit" class="btn btn-ghost btn-sm" title="Clear search">✕</a>
+            <a href="{{ url_for('finance') }}?tab=audit{% if selected_company %}&company_id={{ selected_company.id }}{% endif %}{% if selected_audit %}&audit_id={{ selected_audit.id }}{% endif %}" class="btn btn-ghost btn-sm" title="Clear search">✕</a>
           {% endif %}
         </form>
       </div>
@@ -355,7 +471,7 @@
         <h4>No audit events match your criteria</h4>
         <p>No procurement or financial audit events recorded for the current filter.</p>
         {% if request.args.get('audit_q') %}
-          <a href="{{ url_for('finance') }}?tab=audit" class="btn btn-secondary btn-sm mt-2">Clear Filter</a>
+          <a href="{{ url_for('finance') }}?tab=audit{% if selected_company %}&company_id={{ selected_company.id }}{% endif %}{% if selected_audit %}&audit_id={{ selected_audit.id }}{% endif %}" class="btn btn-secondary btn-sm mt-2">Clear Filter</a>
         {% endif %}
       </div>
     </div>
@@ -365,7 +481,7 @@
   {# ----- Structured Table Registry (Synchronized with Timeline) ----- #}
   <div class="card">
     <div class="card-header d-flex justify-between align-center">
-      <h3>Audit Log Registry</h3>
+      <h3>Audit Log Registry — {{ selected_audit.audit_reference if selected_audit else 'Audit Events' }}</h3>
       <span class="text-xs text-muted">Click any row to open the event details sidebar</span>
     </div>
     <div class="table-wrapper">
@@ -565,7 +681,11 @@
           </div>
           <div>
             <div class="form-label">PO Approved Amount</div>
-            <div style="font-size: 1.25rem; font-weight: 700; {{ 'color: var(--color-red);' if inv.has_mismatch is defined and inv.has_mismatch else '' }}">
+            {% if inv.has_mismatch is defined and inv.has_mismatch %}
+            <div style="font-size: 1.25rem; font-weight: 700; color: var(--color-red);">
+            {% else %}
+            <div style="font-size: 1.25rem; font-weight: 700;">
+            {% endif %}
               {{ inv.po_amount|default('—') }}
             </div>
           </div>
