@@ -1441,41 +1441,157 @@ def log_audit_event(
         pass
 
 
-def get_audit_logs(limit: int = 50) -> List[Dict[str, Any]]:
-    """Retrieves chronological audit events formatted for the audit trail view."""
+
+def format_audit_log_entry(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Formats an audit log dictionary with actor details, labels, action names, and previous/new values."""
+    raw = data.get("details_json")
+    parsed_json: Dict[str, Any] = {}
+    if raw:
+        try:
+            parsed_json = json.loads(raw)
+            data["details"] = parsed_json.get("message", raw)
+        except Exception:
+            data["details"] = raw
+    else:
+        data["details"] = "—"
+
+    # Human-friendly action title
+    action = data.get("action", "")
+    ACTION_TITLES = {
+        "INVOICE_SUBMITTED": "Invoice Submitted",
+        "INVOICE_VERIFY": "Invoice Verified",
+        "PAYMENT_RECORDED": "Payment Recorded",
+        "PO_AUTHORIZED": "Purchase Order Authorized",
+        "QUOTATION_SELECTED": "Quotation Selected",
+        "QUOTATION_SUBMITTED": "Quotation Bid Submitted",
+        "RFQ_CREATED": "RFQ Tender Created",
+        "RFQ_VENDOR_INVITED": "Vendor Invited to RFQ",
+        "VENDOR_APPROVED": "Vendor Registration Approved",
+        "VENDOR_REGISTERED": "Vendor Registered",
+        "DEMO_DATA_SEEDED": "Demo Data Seeded",
+    }
+    data["action_title"] = ACTION_TITLES.get(action, action.replace("_", " ").title())
+
+    # Actor role and organization labels
+    role = data.get("user_role") or "system"
+    company = data.get("vendor_company")
+    if role == "admin":
+        data["actor_role"] = "Procurement Admin"
+        data["actor_organization"] = "VendorBridge Procurement"
+    elif role == "vendor":
+        data["actor_role"] = "Vendor Partner"
+        data["actor_organization"] = company or "Registered Supplier"
+    else:
+        data["actor_role"] = "Automated System"
+        data["actor_organization"] = "VendorBridge Core Engine"
+
+    # Extract previous/new values if present in json or message
+    prev_val = parsed_json.get("previous_value")
+    new_val = parsed_json.get("new_value")
+
+    # Detect state transitions from message like "status updated to verified", "status: paid", "status: pending"
+    msg = data.get("details", "")
+    if not prev_val and not new_val:
+        if "status updated to verified" in msg:
+            prev_val = "Pending Verification"
+            new_val = "Verified"
+        elif "status: paid" in msg:
+            prev_val = "Verified / Unpaid"
+            new_val = "Paid"
+        elif "approved" in msg.lower() and "vendor" in msg.lower():
+            prev_val = "Pending Review"
+            new_val = "Approved"
+        elif "rejected" in msg.lower():
+            prev_val = "Pending"
+            new_val = "Rejected"
+
+    data["previous_value"] = prev_val
+    data["new_value"] = new_val
+
+    # Evidence / Document attachment links
+    rec_type = data.get("record_type")
+    rec_id = data.get("record_id")
+    data["has_evidence"] = False
+    data["evidence_type"] = None
+    data["evidence_url"] = None
+
+    if rec_type == "Invoice" and rec_id:
+        data["has_evidence"] = True
+        data["evidence_type"] = "Invoice PDF"
+        data["evidence_url"] = f"/finance/invoice/{rec_id}/pdf"
+    elif rec_type in ("PurchaseOrder", "PO") and rec_id:
+        data["has_evidence"] = True
+        data["evidence_type"] = "Purchase Order PDF"
+        data["evidence_url"] = f"/procurement/po/{rec_id}/pdf"
+    elif action == "PAYMENT_RECORDED" and rec_type == "Invoice" and rec_id:
+        data["has_evidence"] = True
+        data["evidence_type"] = "Payment Receipt PDF"
+        data["evidence_url"] = f"/finance/payment/{rec_id}/receipt/pdf"
+
+    return data
+
+
+def get_audit_logs(limit: int = 50, search: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Retrieves chronological audit events formatted for the audit trail view and timeline."""
     db = get_db()
     query = """
         SELECT
             al.id,
             al.created_at AS timestamp,
             COALESCE(u.full_name, 'System') AS user_name,
+            COALESCE(u.role, 'system') AS user_role,
+            v.company_name AS vendor_company,
             al.action,
             al.entity_type AS record_type,
             COALESCE(al.entity_id, 0) AS record_id,
             al.details_json
         FROM audit_logs al
         LEFT JOIN users u ON al.actor_user_id = u.id
-        ORDER BY al.id DESC
-        LIMIT ?
+        LEFT JOIN vendors v ON v.user_id = u.id
     """
-    rows = db.execute(query, (limit,)).fetchall()
-    logs: List[Dict[str, Any]] = []
+    params: List[Any] = []
+    if search:
+        query += """
+            WHERE al.action LIKE ?
+               OR al.entity_type LIKE ?
+               OR u.full_name LIKE ?
+               OR v.company_name LIKE ?
+               OR al.details_json LIKE ?
+        """
+        wildcard = f"%{search}%"
+        params.extend([wildcard, wildcard, wildcard, wildcard, wildcard])
 
-    for r in rows:
-        data = dict(r)
-        # Parse details message
-        raw = data.get("details_json")
-        if raw:
-            try:
-                parsed = json.loads(raw)
-                data["details"] = parsed.get("message", raw)
-            except Exception:
-                data["details"] = raw
-        else:
-            data["details"] = "—"
-        logs.append(data)
+    query += " ORDER BY al.id DESC LIMIT ?"
+    params.append(limit)
 
-    return logs
+    rows = db.execute(query, tuple(params)).fetchall()
+    return [format_audit_log_entry(dict(r)) for r in rows]
+
+
+def get_audit_log_by_id(log_id: int) -> Optional[Dict[str, Any]]:
+    """Fetches a single audit log by ID with enriched metadata."""
+    db = get_db()
+    query = """
+        SELECT
+            al.id,
+            al.created_at AS timestamp,
+            COALESCE(u.full_name, 'System') AS user_name,
+            COALESCE(u.role, 'system') AS user_role,
+            v.company_name AS vendor_company,
+            al.action,
+            al.entity_type AS record_type,
+            COALESCE(al.entity_id, 0) AS record_id,
+            al.details_json
+        FROM audit_logs al
+        LEFT JOIN users u ON al.actor_user_id = u.id
+        LEFT JOIN vendors v ON v.user_id = u.id
+        WHERE al.id = ?
+    """
+    row = db.execute(query, (log_id,)).fetchone()
+    if not row:
+        return None
+    return format_audit_log_entry(dict(row))
+
 
 
 def get_dashboard_stats(user: Optional[Dict[str, Any]]) -> Dict[str, Any]:

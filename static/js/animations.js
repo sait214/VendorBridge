@@ -322,6 +322,229 @@
     }
   }
 
+  /* ----- Interactive Audit Timeline & Details Sidebar ----- */
+  function initAuditTimeline() {
+    var sidebar = document.getElementById('audit-sidebar');
+    if (!sidebar) return;
+
+    var backdrop = document.getElementById('audit-sidebar-backdrop');
+    var closeBtn = document.getElementById('audit-sidebar-close');
+    var viewport = document.getElementById('audit-timeline-viewport');
+    var btnLeft = document.getElementById('timeline-scroll-left');
+    var btnRight = document.getElementById('timeline-scroll-right');
+
+    // Parse preloaded audit records from embedded JSON
+    var auditMap = {};
+    var jsonEl = document.getElementById('audit-logs-json');
+    if (jsonEl && jsonEl.textContent) {
+      try {
+        var rawLogs = JSON.parse(jsonEl.textContent);
+        if (Array.isArray(rawLogs)) {
+          rawLogs.forEach(function (item) {
+            if (item && item.id) {
+              auditMap[item.id] = item;
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('VendorBridge: Failed parsing audit-logs-json', err);
+      }
+    }
+
+    // Sidebar DOM fields
+    var elBadge = document.getElementById('sidebar-action-badge');
+    var elAuditId = document.getElementById('sidebar-audit-id');
+    var elTitle = document.getElementById('sidebar-action-title');
+    var elTime = document.getElementById('sidebar-timestamp');
+    var elAvatar = document.getElementById('sidebar-actor-avatar');
+    var elActorName = document.getElementById('sidebar-actor-name');
+    var elActorRoleOrg = document.getElementById('sidebar-actor-role-org');
+    var elRecordType = document.getElementById('sidebar-record-type');
+    var elRecordId = document.getElementById('sidebar-record-id');
+    var elDesc = document.getElementById('sidebar-description');
+    var elTransitionSec = document.getElementById('sidebar-transition-section');
+    var elPrevVal = document.getElementById('sidebar-prev-val');
+    var elNewVal = document.getElementById('sidebar-new-val');
+    var elEvidenceSec = document.getElementById('sidebar-evidence-section');
+    var elEvidenceContainer = document.getElementById('sidebar-evidence-container');
+
+    function renderSidebarData(log) {
+      if (!log) return;
+
+      if (elAuditId) elAuditId.textContent = '#' + log.id;
+      if (elTitle) elTitle.textContent = log.action_title || log.action || 'Audit Event';
+      if (elTime) elTime.textContent = log.timestamp || '—';
+
+      // Badge
+      if (elBadge) {
+        elBadge.textContent = log.action_title || log.action || 'Event';
+        elBadge.className = 'badge';
+        var act = log.action || '';
+        if (['INVOICE_VERIFY', 'PAYMENT_RECORDED', 'PO_AUTHORIZED', 'VENDOR_APPROVED'].indexOf(act) !== -1) {
+          elBadge.classList.add('badge-approved');
+        } else if (['VENDOR_REGISTERED', 'QUOTATION_SUBMITTED'].indexOf(act) !== -1) {
+          elBadge.classList.add('badge-pending');
+        } else {
+          elBadge.classList.add('badge-active');
+        }
+      }
+
+      // Actor
+      var uName = log.user_name || 'System';
+      if (elActorName) elActorName.textContent = uName;
+      if (elAvatar) elAvatar.textContent = uName.slice(0, 2).toUpperCase();
+
+      var roleOrgParts = [];
+      if (log.actor_role) roleOrgParts.push(log.actor_role);
+      if (log.actor_organization) roleOrgParts.push(log.actor_organization);
+      if (elActorRoleOrg) elActorRoleOrg.textContent = roleOrgParts.join(' • ') || 'Internal User';
+
+      // Record / Entity
+      if (elRecordType) elRecordType.textContent = log.record_type || 'Entity';
+      if (elRecordId) elRecordId.textContent = log.record_id ? '#' + log.record_id : 'General';
+
+      // Description
+      if (elDesc) elDesc.textContent = log.details || '—';
+
+      // State Transition
+      if (log.previous_value || log.new_value) {
+        if (elTransitionSec) elTransitionSec.style.display = 'block';
+        if (elPrevVal) elPrevVal.textContent = 'Previous: ' + (log.previous_value || 'None');
+        if (elNewVal) elNewVal.textContent = 'New: ' + (log.new_value || 'None');
+      } else {
+        if (elTransitionSec) elTransitionSec.style.display = 'none';
+      }
+
+      // Evidence & Document Attachments
+      if (elEvidenceContainer) {
+        elEvidenceContainer.innerHTML = '';
+        if (log.has_evidence && log.evidence_url) {
+          if (elEvidenceSec) elEvidenceSec.style.display = 'block';
+          var btn = document.createElement('a');
+          btn.href = log.evidence_url;
+          btn.className = 'btn btn-secondary btn-sm';
+          btn.target = '_blank';
+          btn.rel = 'noopener';
+          btn.textContent = '⬇ Download ' + (log.evidence_type || 'Document Artifact');
+          elEvidenceContainer.appendChild(btn);
+        } else {
+          if (elEvidenceSec) elEvidenceSec.style.display = 'block';
+          var hint = document.createElement('div');
+          hint.className = 'text-xs text-muted';
+          hint.textContent = 'Standard immutable audit trail entry. No external document attachment.';
+          elEvidenceContainer.appendChild(hint);
+        }
+      }
+    }
+
+    function openAuditSidebar(logId) {
+      if (!logId) return;
+
+      // Update active selection state on timeline nodes and table rows
+      document.querySelectorAll('.timeline-node.is-selected, .audit-row.is-selected').forEach(function (el) {
+        el.classList.remove('is-selected');
+      });
+
+      var activeNode = document.querySelector('.timeline-node[data-audit-id="' + logId + '"]');
+      if (activeNode) activeNode.classList.add('is-selected');
+
+      var activeRow = document.querySelector('.audit-row[data-audit-id="' + logId + '"]');
+      if (activeRow) activeRow.classList.add('is-selected');
+
+      // Populate data
+      if (auditMap[logId]) {
+        renderSidebarData(auditMap[logId]);
+      } else {
+        // Fallback fetch via secure API endpoint
+        fetch('/api/audit/' + logId)
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data && !data.error) {
+              auditMap[logId] = data;
+              renderSidebarData(data);
+            }
+          })
+          .catch(function (err) {
+            console.error('Failed to fetch audit details', err);
+          });
+      }
+
+      sidebar.classList.add('is-open');
+      sidebar.setAttribute('aria-hidden', 'false');
+      if (backdrop) backdrop.classList.add('is-active');
+    }
+
+    function closeAuditSidebar() {
+      sidebar.classList.remove('is-open');
+      sidebar.setAttribute('aria-hidden', 'true');
+      if (backdrop) backdrop.classList.remove('is-active');
+
+      document.querySelectorAll('.timeline-node.is-selected, .audit-row.is-selected').forEach(function (el) {
+        el.classList.remove('is-selected');
+      });
+    }
+
+    // Expose helpers globally if needed
+    window.openAuditSidebar = openAuditSidebar;
+    window.closeAuditSidebar = closeAuditSidebar;
+
+    // Timeline Node clicks
+    document.addEventListener('click', function (e) {
+      // Timeline node or dot clicked
+      var node = e.target.closest('.timeline-node');
+      if (node) {
+        var id = node.getAttribute('data-audit-id');
+        if (id) {
+          openAuditSidebar(id);
+          return;
+        }
+      }
+
+      // Table row clicked
+      var row = e.target.closest('.audit-row');
+      if (row) {
+        var rowId = row.getAttribute('data-audit-id');
+        if (rowId) {
+          openAuditSidebar(rowId);
+          var matchingNode = document.querySelector('.timeline-node[data-audit-id="' + rowId + '"]');
+          if (matchingNode) {
+            matchingNode.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+          }
+          return;
+        }
+      }
+
+      // Close button
+      if (e.target.closest('#audit-sidebar-close') || e.target.closest('#audit-sidebar-backdrop')) {
+        closeAuditSidebar();
+      }
+    });
+
+    // Keyboard support (Escape to close, Enter/Space on node to select)
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && sidebar.classList.contains('is-open')) {
+        closeAuditSidebar();
+      }
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('timeline-node')) {
+        e.preventDefault();
+        var id = e.target.getAttribute('data-audit-id');
+        if (id) openAuditSidebar(id);
+      }
+    });
+
+    // Horizontal Scroll Buttons
+    if (btnLeft && viewport) {
+      btnLeft.addEventListener('click', function () {
+        viewport.scrollBy({ left: -280, behavior: 'smooth' });
+      });
+    }
+    if (btnRight && viewport) {
+      btnRight.addEventListener('click', function () {
+        viewport.scrollBy({ left: 280, behavior: 'smooth' });
+      });
+    }
+  }
+
   /* ----- Initialize All On DOMContentLoaded ----- */
   document.addEventListener('DOMContentLoaded', function () {
     initSidebar();
@@ -330,6 +553,7 @@
     initFlashMessages();
     initCounters();
     initLoginRoleSwitch();
+    initAuditTimeline();
   });
 
 })();

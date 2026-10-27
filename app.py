@@ -7,7 +7,7 @@ import os
 import re
 from datetime import datetime, timedelta
 from typing import Optional
-from flask import Flask, render_template, request, redirect, url_for, flash, session, abort, Response
+from flask import Flask, render_template, request, redirect, url_for, flash, session, abort, Response, jsonify
 import database as db
 import pdf_generator
 
@@ -613,13 +613,14 @@ def finance():
         return redirect(url_for('finance', tab='invoices'))
 
     q = request.args.get('q', '').strip()
+    audit_q = request.args.get('audit_q', '').strip()
     v_status = request.args.get('verification_status', '').strip()
     p_status = request.args.get('payment_status', '').strip()
 
     invoices = db.get_invoices(user=user, verification_status=v_status, payment_status=p_status, search=q)
     payments = db.get_payment_records(user=user)
     orders = db.get_purchase_orders(user=user)
-    audit_records = db.get_audit_logs(limit=50) if not is_vendor else []
+    audit_records = db.get_audit_logs(limit=50, search=audit_q if audit_q else None) if not is_vendor else []
 
     return render_template('finance.html',
         active_page='finance',
@@ -638,6 +639,20 @@ def finance():
         approved_vendors=db.get_vendors(status='approved') if not is_vendor else [],
         **get_nav_badges(user),
     )
+
+
+@app.route('/api/audit/<int:log_id>')
+def api_audit_detail(log_id: int):
+    """Retrieve detailed metadata for a single audit event (Admin restricted)."""
+    user = get_current_user()
+    if not user or user.get('role') != 'admin':
+        return jsonify({'error': 'Unauthorized: Audit details restricted to administrators'}), 403
+
+    log = db.get_audit_log_by_id(log_id)
+    if not log:
+        return jsonify({'error': f'Audit log #{log_id} not found'}), 404
+
+    return jsonify(log)
 
 
 @app.route('/finance/invoice/register', methods=['POST'])

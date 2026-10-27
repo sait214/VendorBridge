@@ -288,57 +288,140 @@
 </div>
 
 {# ================================================================
-   TAB 3: Audit Trail
+   TAB 3: Interactive Audit Trail Timeline & Registry
    ================================================================ #}
 {% if current_user is defined and current_user.role == 'admin' %}
 <div class="tab-panel {% if active_tab == 'audit' %}active{% endif %}" id="audit" role="tabpanel">
-  <div class="card">
-    <div class="card-header">
-      <h3>Procurement Audit Trail</h3>
-      <div class="d-flex gap-1">
-        <form method="GET" action="{{ url_for('finance') }}" class="d-flex gap-1">
+
+  {# ----- Interactive Horizontal Audit Timeline ----- #}
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-between align-center flex-wrap gap-1">
+      <div>
+        <h3 class="d-flex align-center gap-1">
+          <span>Interactive Audit Timeline</span>
+          <span class="badge badge-approved text-xs">{{ audit_logs|length }} Events</span>
+        </h3>
+        <p class="text-xs text-muted mt-0">Chronological event flow. Click any timeline dot to inspect full event metadata.</p>
+      </div>
+
+      <div class="d-flex align-center gap-1">
+        <div class="timeline-nav-buttons d-flex gap-1">
+          <button type="button" class="btn btn-secondary btn-sm" id="timeline-scroll-left" aria-label="Scroll timeline left" title="Scroll earlier">◀</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="timeline-scroll-right" aria-label="Scroll timeline right" title="Scroll later">▶</button>
+        </div>
+        <form method="GET" action="{{ url_for('finance') }}" class="d-flex gap-1 align-center">
           <input type="hidden" name="tab" value="audit">
           <input type="search" name="audit_q" class="form-input" placeholder="Search audit trail…"
-                 value="{{ request.args.get('audit_q', '') }}" style="width: 220px;">
-          <button type="submit" class="btn btn-secondary btn-sm">Search</button>
+                 value="{{ request.args.get('audit_q', '') }}" style="width: 200px;">
+          <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
+          {% if request.args.get('audit_q') %}
+            <a href="{{ url_for('finance') }}?tab=audit" class="btn btn-ghost btn-sm" title="Clear search">✕</a>
+          {% endif %}
         </form>
       </div>
+    </div>
+
+    {% if audit_logs is defined and audit_logs %}
+    <div class="timeline-viewport" id="audit-timeline-viewport" tabindex="0" role="region" aria-label="Audit Timeline Track">
+      <div class="timeline-track" id="audit-timeline-track">
+        <div class="timeline-axis" aria-hidden="true"></div>
+
+        {% for log in audit_logs %}
+        <div class="timeline-node" data-audit-id="{{ log.id }}" role="button" tabindex="0" aria-label="Event #{{ log.id }}: {{ log.action_title|default(log.action) }}">
+          <div class="timeline-dot-wrapper">
+            <div class="timeline-dot {% if log.action in ['INVOICE_VERIFY', 'PAYMENT_RECORDED', 'PO_AUTHORIZED', 'VENDOR_APPROVED'] %}badge-green{% elif log.action in ['VENDOR_REGISTERED', 'QUOTATION_SUBMITTED'] %}badge-amber{% else %}badge-blue{% endif %}"
+                 data-audit-id="{{ log.id }}">
+              <div class="timeline-dot-inner"></div>
+            </div>
+          </div>
+
+          <div class="timeline-node-card">
+            <div class="timeline-node-time">{{ log.timestamp|default('—') }}</div>
+            <div class="timeline-node-title">{{ log.action_title|default(log.action) }}</div>
+            <div class="timeline-node-actor">
+              <span class="actor-avatar-xs">{{ log.user_name[:1]|upper if log.user_name else '?' }}</span>
+              <span>{{ log.user_name|default('System') }}</span>
+            </div>
+            <div class="timeline-node-summary" title="{{ log.details }}">{{ log.details|default('—') }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="p-3 text-center">
+      <div class="empty-state">
+        <div class="empty-state-icon">◉</div>
+        <h4>No audit events match your criteria</h4>
+        <p>No procurement or financial audit events recorded for the current filter.</p>
+        {% if request.args.get('audit_q') %}
+          <a href="{{ url_for('finance') }}?tab=audit" class="btn btn-secondary btn-sm mt-2">Clear Filter</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ----- Structured Table Registry (Synchronized with Timeline) ----- #}
+  <div class="card">
+    <div class="card-header d-flex justify-between align-center">
+      <h3>Audit Log Registry</h3>
+      <span class="text-xs text-muted">Click any row to open the event details sidebar</span>
     </div>
     <div class="table-wrapper">
       <table>
         <thead>
           <tr>
+            <th style="width: 70px;">ID</th>
             <th>Timestamp</th>
-            <th>User</th>
+            <th>User / Actor</th>
             <th>Action</th>
             <th>Target Record</th>
-            <th>Details</th>
+            <th>Summary</th>
+            <th style="width: 90px; text-align: right;">Action</th>
           </tr>
         </thead>
         <tbody>
           {% if audit_logs is defined and audit_logs %}
             {% for log in audit_logs %}
-            <tr>
-              <td class="text-sm">{{ log.timestamp|default('—') }}</td>
+            <tr class="audit-row" data-audit-id="{{ log.id }}" tabindex="0" role="button" aria-label="Select audit event #{{ log.id }}">
+              <td class="text-xs text-muted">#{{ log.id }}</td>
+              <td class="text-sm font-mono">{{ log.timestamp|default('—') }}</td>
               <td>
                 <div class="d-flex align-center gap-1">
-                  <div class="sidebar-avatar" style="width: 26px; height: 26px; font-size: 0.65rem; background: var(--color-teal-soft); color: var(--color-primary);">
-                    {{ log.user_name[:2]|upper if log.user_name is defined and log.user_name else '?' }}
+                  <div class="sidebar-avatar" style="width: 24px; height: 24px; font-size: 0.65rem; background: var(--color-teal-soft); color: var(--color-primary);">
+                    {{ log.user_name[:2]|upper if log.user_name else '?' }}
                   </div>
-                  <span>{{ log.user_name|default('System') }}</span>
+                  <div>
+                    <div style="font-weight: 600;">{{ log.user_name|default('System') }}</div>
+                    <div class="text-xs text-muted">{{ log.actor_role|default(log.user_role|title) }}</div>
+                  </div>
                 </div>
               </td>
-              <td><span class="audit-action">{{ log.action|default('—') }}</span></td>
-              <td><span class="audit-record">{{ log.record_type|default('') }} {{ log.record_id|default('') }}</span></td>
-              <td class="text-sm text-muted">{{ log.details|default('—') }}</td>
+              <td>
+                <span class="badge {% if log.action in ['INVOICE_VERIFY', 'PAYMENT_RECORDED', 'PO_AUTHORIZED', 'VENDOR_APPROVED'] %}badge-approved{% elif log.action in ['VENDOR_REGISTERED', 'QUOTATION_SUBMITTED'] %}badge-pending{% else %}badge-active{% endif %}">
+                  {{ log.action_title|default(log.action) }}
+                </span>
+              </td>
+              <td>
+                <span class="audit-record">{{ log.record_type|default('') }} #{{ log.record_id|default('') }}</span>
+              </td>
+              <td class="text-sm text-muted" style="max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{ log.details }}">
+                {{ log.details|default('—') }}
+              </td>
+              <td style="text-align: right;">
+                <button type="button" class="btn btn-ghost btn-sm btn-inspect-audit" data-audit-id="{{ log.id }}" title="View full event details">
+                  Inspect →
+                </button>
+              </td>
             </tr>
             {% endfor %}
           {% else %}
             <tr>
-              <td colspan="5">
+              <td colspan="7">
                 <div class="empty-state">
                   <div class="empty-state-icon">◉</div>
-                  <h4>No audit events recorded</h4>
+                  <h4>No audit records found</h4>
                   <p>All procurement, approval, and payment events will be logged here.</p>
                 </div>
               </td>
@@ -348,6 +431,91 @@
       </table>
     </div>
   </div>
+
+  {# ----- Details Sidebar (Slides in on Dot / Row Click) ----- #}
+  <aside class="audit-sidebar" id="audit-sidebar" aria-hidden="true" role="dialog" aria-label="Audit Event Details">
+    <div class="audit-sidebar-header">
+      <div class="d-flex align-center gap-1">
+        <span class="badge badge-approved" id="sidebar-action-badge">Audit Event</span>
+        <span class="text-xs text-muted" id="sidebar-audit-id">#--</span>
+      </div>
+      <button type="button" class="audit-sidebar-close" id="audit-sidebar-close" aria-label="Close sidebar details">&times;</button>
+    </div>
+
+    <div class="audit-sidebar-body">
+      <div class="audit-sidebar-title-row mb-2">
+        <h3 id="sidebar-action-title" style="margin-bottom: 2px;">Event Action</h3>
+        <div class="text-xs text-muted font-mono" id="sidebar-timestamp">Timestamp</div>
+      </div>
+
+      {# Actor Details #}
+      <div class="audit-detail-section mb-3">
+        <div class="section-label">Actor &amp; Organization</div>
+        <div class="d-flex align-center gap-2 mt-1 p-2 clay-panel" style="background: var(--bg-surface-raised);">
+          <div class="sidebar-avatar" id="sidebar-actor-avatar" style="width: 38px; height: 38px; font-size: 0.85rem; background: var(--color-teal-soft); color: var(--color-primary); flex-shrink: 0;">
+            U
+          </div>
+          <div>
+            <div class="text-bold" id="sidebar-actor-name">User Name</div>
+            <div class="text-xs text-muted" id="sidebar-actor-role-org">Role • Organization</div>
+          </div>
+        </div>
+      </div>
+
+      {# Target Record / Entity #}
+      <div class="audit-detail-section mb-3">
+        <div class="section-label">Target Entity / Record</div>
+        <div class="d-flex align-center gap-1 mt-1">
+          <span class="badge badge-secondary" id="sidebar-record-type">Entity</span>
+          <span class="text-sm font-mono text-bold" id="sidebar-record-id">Record #--</span>
+        </div>
+      </div>
+
+      {# Activity Description #}
+      <div class="audit-detail-section mb-3">
+        <div class="section-label">Activity Description</div>
+        <div class="clay-panel p-2 mt-1 text-sm" id="sidebar-description" style="line-height: 1.5; background: var(--bg-surface-raised);">
+          Activity description details
+        </div>
+      </div>
+
+      {# State Transition / Previous vs New Values #}
+      <div class="audit-detail-section mb-3" id="sidebar-transition-section">
+        <div class="section-label">State Transition / Values</div>
+        <div class="state-transition-box mt-1" id="sidebar-transition-box">
+          <div class="state-pill state-prev" id="sidebar-prev-val">Previous: —</div>
+          <div class="state-arrow">→</div>
+          <div class="state-pill state-new" id="sidebar-new-val">New: —</div>
+        </div>
+      </div>
+
+      {# Evidence & Related Document Attachments #}
+      <div class="audit-detail-section mb-3" id="sidebar-evidence-section">
+        <div class="section-label">Evidence &amp; Document Artifacts</div>
+        <div class="mt-1" id="sidebar-evidence-container">
+          <!-- Populated dynamically if applicable -->
+        </div>
+      </div>
+
+      {# Immutable Integrity Stamp #}
+      <div class="audit-compliance-stamp mt-3 p-2 clay-panel" style="background: var(--bg-surface-raised); border-left: 3px solid var(--color-green);">
+        <div class="d-flex align-center gap-1 text-xs" style="color: var(--color-text-secondary);">
+          <span style="font-size: 1rem;">🔒</span>
+          <div>
+            <strong>Immutable Audit Record:</strong> Chronologically indexed in SQLite ledger. Tamper-evident and non-repudiable.
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  {# Sidebar Overlay / Backdrop (Mobile & Focus Trap) #}
+  <div class="audit-sidebar-backdrop" id="audit-sidebar-backdrop"></div>
+
+  {# JSON Data Store for Zero-Latency Client Interaction #}
+  <script type="application/json" id="audit-logs-json">
+    {{ audit_logs|tojson|safe }}
+  </script>
 </div>
 {% endif %}
 
